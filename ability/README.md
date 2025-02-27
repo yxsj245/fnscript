@@ -15,3 +15,7 @@
 
 ## `swapinfo.py`——开关swap
 通过编辑系统中`/etc/fstab`文件 注释`swap_line`代码实现关闭，开启swap就是将此代码取消注释
+
+## `qcowtools.py`——转换磁盘映像格式
+使用命令如下
+- `qemu-img`
