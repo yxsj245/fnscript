@@ -73,7 +73,7 @@ def eject_cd(selected_drive):
 clear_screen()
 print(f"{YELLOW}挂载CD/DVD程序 版本1.0{RED}")
 print(f'{RED}风险告知：由于此脚本中运行的指令涉及在root用户下才能运行，脚本会创建一个root终端执行相应命令并在执行完毕后自动关闭。由于root权限强大，为了保证数据安全，请您务必在执行前经过测试或数据备份再进行！对此出现的意外情况，作者不承担任何责任。按任意键表示继续运行，ctrl+c可终止运行{RESET}')
-print(f'{BLUE}此方法中不存在删除文件操作，您可以放心运行！{RESET}')
+print(f'{BLUE}此方法中不存在删除文件等其它敏感操作，您可以放心运行！{RESET}')
 input()
 clear_screen()
 

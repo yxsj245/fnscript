@@ -15,6 +15,7 @@ download_all_scripts() {
     curl -k -o ability/processinfo.py "https://pub-46d21cac9c7d44b79d73abfeb727999f.r2.dev/Linux%E8%84%9A%E6%9C%AC/%E9%A3%9E%E7%89%9B/ability/processinfo.py"
     curl -k -o ability/startIOMMU.py "https://pub-46d21cac9c7d44b79d73abfeb727999f.r2.dev/Linux%E8%84%9A%E6%9C%AC/%E9%A3%9E%E7%89%9B/ability/startIOMMU.py"
     curl -k -o ability/swapinfo.py "https://pub-46d21cac9c7d44b79d73abfeb727999f.r2.dev/Linux%E8%84%9A%E6%9C%AC/%E9%A3%9E%E7%89%9B/ability/swapinfo.py"
+    curl -k -o ability/qcowtools.py "https://pub-46d21cac9c7d44b79d73abfeb727999f.r2.dev/Linux%E8%84%9A%E6%9C%AC/%E9%A3%9E%E7%89%9B/ability/qcowtools.py"
     echo "所有程序 下载/更新 完毕"
 }
 
