@@ -8,15 +8,15 @@ download_all_scripts() {
 
     # 创建 ability 文件夹
     mkdir -p ability
-
-    # 下载 cdmount.py 到 ability 文件夹
-    echo "正在下载所有py方法程序"
-    curl -k -o ability/cdmount.py "https://pub-46d21cac9c7d44b79d73abfeb727999f.r2.dev/Linux%E8%84%9A%E6%9C%AC/%E9%A3%9E%E7%89%9B/ability/cdmount.py"
-    curl -k -o ability/processinfo.py "https://pub-46d21cac9c7d44b79d73abfeb727999f.r2.dev/Linux%E8%84%9A%E6%9C%AC/%E9%A3%9E%E7%89%9B/ability/processinfo.py"
-    curl -k -o ability/startIOMMU.py "https://pub-46d21cac9c7d44b79d73abfeb727999f.r2.dev/Linux%E8%84%9A%E6%9C%AC/%E9%A3%9E%E7%89%9B/ability/startIOMMU.py"
-    curl -k -o ability/swapinfo.py "https://pub-46d21cac9c7d44b79d73abfeb727999f.r2.dev/Linux%E8%84%9A%E6%9C%AC/%E9%A3%9E%E7%89%9B/ability/swapinfo.py"
-    curl -k -o ability/qcowtools.py "https://pub-46d21cac9c7d44b79d73abfeb727999f.r2.dev/Linux%E8%84%9A%E6%9C%AC/%E9%A3%9E%E7%89%9B/ability/qcowtools.py"
-    echo "所有程序 下载/更新 完毕"
+#
+#    # 下载 cdmount.py 到 ability 文件夹
+#    echo "正在下载所有py方法程序"
+#    curl -k -o ability/cdmount.py "https://pub-46d21cac9c7d44b79d73abfeb727999f.r2.dev/Linux%E8%84%9A%E6%9C%AC/%E9%A3%9E%E7%89%9B/ability/cdmount.py"
+#    curl -k -o ability/processinfo.py "https://pub-46d21cac9c7d44b79d73abfeb727999f.r2.dev/Linux%E8%84%9A%E6%9C%AC/%E9%A3%9E%E7%89%9B/ability/processinfo.py"
+#    curl -k -o ability/startIOMMU.py "https://pub-46d21cac9c7d44b79d73abfeb727999f.r2.dev/Linux%E8%84%9A%E6%9C%AC/%E9%A3%9E%E7%89%9B/ability/startIOMMU.py"
+#    curl -k -o ability/swapinfo.py "https://pub-46d21cac9c7d44b79d73abfeb727999f.r2.dev/Linux%E8%84%9A%E6%9C%AC/%E9%A3%9E%E7%89%9B/ability/swapinfo.py"
+#    curl -k -o ability/qcowtools.py "https://pub-46d21cac9c7d44b79d73abfeb727999f.r2.dev/Linux%E8%84%9A%E6%9C%AC/%E9%A3%9E%E7%89%9B/ability/qcowtools.py"
+#    echo "所有程序 下载/更新 完毕"
 }
 
 # 询问用户操作选项
