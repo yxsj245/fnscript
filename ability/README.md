@@ -25,4 +25,4 @@
 
 ## `vmtoolses.py`——安装虚拟机管理工具
 使用命令如下
-- `apt install`、`dpkg`
+- `apt`、`dpkg`
