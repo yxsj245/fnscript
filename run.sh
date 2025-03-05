@@ -3,6 +3,8 @@
 # 定义下载所有脚本的函数
 download_all_scripts() {
     # 下载 run.py 到当前目录
+    echo "正在更新apt包"
+    sudo apt update -y
     echo "正在下载py主程序"
     curl -k -o run.py "https://pub-46d21cac9c7d44b79d73abfeb727999f.r2.dev/Linux%E8%84%9A%E6%9C%AC/%E9%A3%9E%E7%89%9B/run.py"
 
