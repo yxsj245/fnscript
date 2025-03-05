@@ -22,3 +22,7 @@
 
 ## `filestorage.py`——列出指定目录的所有文件夹所占磁盘大小
 使用python自带标准库`os`获取文件信息
+
+## `vmtoolses.py`——安装虚拟机管理工具
+使用命令如下
+- `apt install`、`dpkg`
