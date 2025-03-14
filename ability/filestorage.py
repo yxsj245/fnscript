@@ -1,94 +1,87 @@
 import os
+import sys
+import locale
+import re
 from tabulate import tabulate
 
-# 定义颜色常量
-RESET = "\033[0m"
-BOLD = "\033[1m"
-RED = "\033[31m"
-GREEN = "\033[32m"
-YELLOW = "\033[33m"
-BLUE = "\033[34m"
-MAGENTA = "\033[35m"
-CYAN = "\033[36m"
-WHITE = "\033[37m"
+# 解决 Windows 终端输入输出编码问题
+sys.stdin.reconfigure(encoding=locale.getpreferredencoding())
+sys.stdout.reconfigure(encoding=locale.getpreferredencoding())
 
+# ANSI 颜色定义（仅终端使用）
+GREEN = "\033[32m"
+RESET = "\033[0m"
+
+# 去除 ANSI 颜色的正则
+ANSI_ESCAPE_RE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
 
 def get_folder_size(folder_path):
-    """递归计算文件夹的总大小"""
+    """计算目录的总大小，并获取文件列表"""
     total_size = 0
-    files_info = []  # 存储文件的大小和路径
-    for dirpath, dirnames, filenames in os.walk(folder_path, followlinks=True):  # 增加followlinks，确保遍历符号链接
+    files_info = []
+
+    for dirpath, _, filenames in os.walk(folder_path, followlinks=True):
         for filename in filenames:
             filepath = os.path.join(dirpath, filename)
             try:
-                if os.path.exists(filepath):  # 可能有链接失效的情况
+                if os.path.exists(filepath):
                     file_size = os.path.getsize(filepath)
                     total_size += file_size
-                    files_info.append((filepath, file_size))  # 添加文件大小和路径
+                    files_info.append((filepath, file_size))
             except PermissionError:
-                print(f"权限不足，无法访问文件: {filepath}")
-            except Exception as e:
-                print(f"无法处理文件 {filepath}: {e}")
+                pass  # 忽略权限错误的文件
+            except Exception:
+                pass  # 其他异常也忽略
+
     return total_size, files_info
 
-
 def format_size(size_in_bytes):
-    """将字节大小转换为合适的单位"""
+    """将字节数转换为可读格式"""
     for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
         if size_in_bytes < 1024:
             return f"{size_in_bytes:.2f} {unit}"
         size_in_bytes /= 1024
 
+def remove_ansi(text):
+    """移除 ANSI 颜色控制字符"""
+    return ANSI_ESCAPE_RE.sub('', text)
 
-def list_folders_by_size(directory):
-    """列出指定目录下所有文件夹的存储占用，按大小从大到小排序"""
-    folder_sizes = []
-
-    # 确保输入的是一个有效目录
+def analyze_directory(directory, save_path):
+    """分析目录并保存结果，包括隐藏文件夹"""
     if not os.path.isdir(directory):
-        print(f"'{directory}' 不是一个有效的目录。")
+        print(f"'{directory}' 不是有效目录。")
         return
 
-    # 遍历目录，获取所有子文件夹的大小
-    for item in os.listdir(directory):
-        folder_path = os.path.join(directory, item)
-        if os.path.isdir(folder_path):
-            size, files_info = get_folder_size(folder_path)
-            # 只将大小大于0的文件夹添加到结果中
-            if size > 0:
-                folder_sizes.append((folder_path, size, files_info))
+    # 获取所有子目录（包括隐藏目录）
+    sub_dirs = [
+        os.path.join(directory, d) for d in os.listdir(directory)
+        if os.path.isdir(os.path.join(directory, d))
+    ]
 
-    # 按照大小从大到小排序
-    folder_sizes.sort(key=lambda x: x[1], reverse=True)
+    output_lines = []
 
-    # 打印表格的表头
-    print(f"目录 '{directory}' 下的文件夹按大小排序：")
-    print("\n" + "-" * 60)
-    print(f"{'文件夹路径':<45} {'文件夹大小':<15}")
-    print("-" * 60)
+    for folder in [directory] + sub_dirs:
+        total_size, files_info = get_folder_size(folder)
 
-    # 输出文件夹表格
-    folder_table = []
-    for folder, size, _ in folder_sizes:
-        folder_table.append([f"{BLUE}{folder}{RESET}", f"{format_size(size)}"])
-
-    print(tabulate(folder_table, headers=["文件夹路径", "文件夹大小"], tablefmt="fancy_grid"))
-
-    # 输出每个文件夹中的文件信息表格
-    for folder, size, files_info in folder_sizes:
-        print(f"\n{CYAN}文件夹: {folder}{RESET} - 总大小: {format_size(size)}")
-        print(f"{CYAN}文件列表（按大小排序）:{RESET}")
+        output_lines.append(f"文件夹: {folder} - 总大小: {format_size(total_size)}")
+        output_lines.append("文件列表（按大小排序）：")
 
         files_info.sort(key=lambda x: x[1], reverse=True)
 
-        file_table = []
-        for file_path, file_size in files_info:
-            file_table.append([f"{GREEN}{file_path}{RESET}", f"{format_size(file_size)}"])
+        plain_table = [[file_path, format_size(file_size)] for file_path, file_size in files_info]
+        output_lines.append(tabulate(plain_table, headers=["文件路径", "文件大小"], tablefmt="fancy_grid"))
 
-        print(tabulate(file_table, headers=["文件路径", "文件大小"], tablefmt="fancy_grid"))
+    os.makedirs(save_path, exist_ok=True)
+    save_file = os.path.join(save_path, "device_info_report.txt")
 
+    with open(save_file, "w", encoding="utf-8") as f:
+        f.write("\n".join(output_lines))
 
-# 用户输入目录
+    print(f"{GREEN}分析完成，由于输出展示文件可能较多会影响终端性能，已将结果保存到: {save_file}{RESET}")
+
+# 获取用户输入
 os.system('clear' if os.name == 'posix' else 'cls')
-user_directory = input("请输入要查看的目录路径：")
-list_folders_by_size(user_directory)
+user_directory = input("请输入要分析的目录路径：").strip()
+save_directory = input("请输入要保存输出结果的目录路径：").strip()
+
+analyze_directory(user_directory, save_directory)

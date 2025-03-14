@@ -60,6 +60,29 @@ def check_and_install_package(package_name):
             print(f"安装 {package_name} 时发生错误: {e}")
 
 
+def install_package(package_name):
+    """检测APT包是否已安装，若未安装则进行安装"""
+    try:
+        # 检查包是否已安装
+        result = subprocess.run(
+            ["dpkg", "-l", package_name],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+
+        if package_name in result.stdout:
+            print(f"软件包 '{package_name}' 已安装，跳过安装。")
+            return
+
+        # 安装包
+        print(f"安装软件包 '{package_name}'...")
+        subprocess.run(["sudo", "apt-get", "install", "-y", package_name], check=True)
+        print(f"软件包 '{package_name}' 安装完成。")
+
+    except Exception as e:
+        print(f"处理软件包 '{package_name}' 时出错: {e}")
+
 def display_menu():
     """展示菜单"""
     print(f"{GREEN}欢迎使用Linux(FnOS)菜单脚本{RESET}")
@@ -72,6 +95,8 @@ def display_menu():
     print("7.查看设备硬件详细信息")
     print("8.持续监控CPU状态信息")
     print("9.安装虚拟机运行优化工具")
+    print("10.设备电源管理")
+    print("11.硬件自检及压测")
     print("g.关于脚本项目")
     print("n. 退出")
 
@@ -178,6 +203,33 @@ def main():
 
             print(f'{GREEN}安装完毕，执行脚本{RESET}')
             subprocess.run(['sudo','python3', 'ability/vmtoolses.py'])
+
+        elif choice == '10':
+            print(f'{RED}风险告知：由于此脚本中运行的指令涉及在root用户下才能运行，脚本会创建一个root终端执行相应命令并在执行完毕后自动关闭。由于root权限强大，为了保证数据安全，请您务必在执行前经过测试或数据备份再进行！对此出现的意外情况，作者不承担任何责任。按任意键表示继续运行，ctrl+c可终止运行{RESET}')
+            print(f'{BLUE}此方法中不存在删除文件等其它敏感操作，您可以放心运行！{RESET}')
+            input()
+
+            # url = "https://pub-46d21cac9c7d44b79d73abfeb727999f.r2.dev/Linux%E8%84%9A%E6%9C%AC/%E9%A3%9E%E7%89%9B/ability/Powermanagement.py"
+            save_path = "ability/Powermanagement.py"
+            download_file(url, save_path)
+
+            print(f'{GREEN}安装完毕，执行脚本{RESET}')
+            subprocess.run(['sudo','python3', 'ability/Powermanagement.py'])
+
+        elif choice == '11':
+            # print(f'{RED}风险告知：由于此脚本中运行的指令涉及在root用户下才能运行，脚本会创建一个root终端执行相应命令并在执行完毕后自动关闭。由于root权限强大，为了保证数据安全，请您务必在执行前经过测试或数据备份再进行！对此出现的意外情况，作者不承担任何责任。按任意键表示继续运行，ctrl+c可终止运行{RESET}')
+            # print(f'{BLUE}此方法中不存在删除文件等其它敏感操作，您可以放心运行！{RESET}')
+            # input()
+
+            # url = "https://pub-46d21cac9c7d44b79d73abfeb727999f.r2.dev/Linux%E8%84%9A%E6%9C%AC/%E9%A3%9E%E7%89%9B/ability/self_inspection.py"
+            # save_path = "ability/self_inspection.py"
+            # download_file(url, save_path)
+
+            print(f'{GREEN}安装apt包{RESET}')
+            install_package('memtester')
+            install_package('stress')
+            print(f'{GREEN}安装完毕，执行脚本{RESET}')
+            subprocess.run(['sudo','python3', 'ability/self_inspection.py'])
 
         elif choice == 'g':
             None
