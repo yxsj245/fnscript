@@ -3,7 +3,6 @@
 ![image](https://github.com/user-attachments/assets/809c5fe3-7a33-4caf-87a4-ad36a2f9a552)
  \
 脚本每个功能均进行过测试，确保大部分状态环境下运行安全可靠
-脚本实现原理[>>点击这里查看每个功能介绍](https://github.com/yxsj245/fnscript/blob/main/ability/README.md)
 # 如何使用
 连接SSH复制粘贴以下指令即可
 ```bash
