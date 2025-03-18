@@ -10,6 +10,8 @@ download_all_scripts() {
 
     # 创建 ability 文件夹
     mkdir -p ability
+
+    echo "建议下次使用时，进入script目录输入python3 run.py 进行运行"
 #
 #    # 下载 cdmount.py 到 ability 文件夹
 #    echo "正在下载所有py方法程序"
