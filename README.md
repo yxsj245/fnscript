@@ -1,6 +1,6 @@
 # fnscript
 ## 一个专注于优化FnOS的脚本
-![image](https://github.com/user-attachments/assets/809c5fe3-7a33-4caf-87a4-ad36a2f9a552)
+![image](https://github.com/user-attachments/assets/4bf9e320-1f3d-4f02-a693-04a9593a0c4c)
  \
 脚本每个功能均进行过测试，确保大部分状态环境下运行安全可靠
 # 如何使用
