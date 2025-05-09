@@ -15,18 +15,19 @@ jobs:
     
     - name: 设置Docker
       run: |
-        docker pull debian:buster
+        # 使用支持Python 3.12的基础镜像
+        docker pull python:3.12-slim
         # 创建并启动容器
-        docker run -d --name builder -v $PWD:/app debian:buster tail -f /dev/null
+        docker run -d --name builder -v $PWD:/app python:3.12-slim tail -f /dev/null
     
     - name: 安装依赖
       run: |
         docker exec builder bash -c "cd /app && \
           apt-get update && \
-          apt-get install -y python3 python3-pip zip && \
-          python3 -m pip install --upgrade pip && \
-          python3 -m pip install pyinstaller==5.13.2 && \
-          python3 -m pip install textual==0.43.2 psutil"
+          apt-get install -y zip && \
+          python -m pip install --upgrade pip && \
+          python -m pip install pyinstaller==5.13.2 && \
+          python -m pip install textual==3.2.0 psutil"
     
     - name: 查找所有Python脚本
       run: |
@@ -44,7 +45,7 @@ jobs:
           while IFS= read -r script; do \
             script_name=\$(basename \"\$script\" .py); \
             echo \"正在打包: \$script_name\"; \
-            python3 -m PyInstaller -F \"\$script\" \
+            python -m PyInstaller -F \"\$script\" \
               --name \"\$script_name\" \
               --clean \
               --runtime-tmpdir /tmp \
@@ -59,7 +60,7 @@ jobs:
             while IFS= read -r script; do \
               script_name=\$(basename \"\$script\" .py); \
               echo \"正在打包ability脚本: \$script_name\"; \
-              python3 -m PyInstaller -F \"\$script\" \
+              python -m PyInstaller -F \"\$script\" \
                 --name \"ability_\$script_name\" \
                 --clean \
                 --runtime-tmpdir /tmp \
