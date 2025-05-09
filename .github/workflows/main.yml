@@ -1,4 +1,4 @@
-name: pack-linux-dashboard
+name: pack-linux-tools
 
 on:
   workflow_dispatch:  # 允许手动触发工作流
@@ -7,7 +7,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      CODE_NAME: SystemDashboard # 定义文件名 
+      OUTPUT_DIR: packed_tools # 定义输出目录名
     
     steps:
     # 签出代码
@@ -19,25 +19,71 @@ jobs:
         # 创建并启动容器
         docker run -d --name builder -v $PWD:/app debian:buster tail -f /dev/null
     
-    - name: 在Docker中构建应用
+    - name: 安装依赖
       run: |
         docker exec builder bash -c "cd /app && \
           apt-get update && \
-          apt-get install -y python3 python3-pip && \
+          apt-get install -y python3 python3-pip zip && \
           python3 -m pip install --upgrade pip && \
           python3 -m pip install pyinstaller==5.13.2 && \
-          python3 -m pip install textual psutil && \
-          pyinstaller -F dashboard.py \
-            --name \"${{ env.CODE_NAME }}\" \
-            --clean \
-            --runtime-tmpdir /tmp"
+          python3 -m pip install textual psutil"
     
-    - name: 检查构建结果
+    - name: 查找所有Python脚本
       run: |
-        ls -la dist
+        docker exec builder bash -c "cd /app && find . -maxdepth 1 -name '*.py' -type f -not -path '*/\.*' > /app/scripts_to_build.txt"
+        echo "找到以下Python脚本:"
+        cat scripts_to_build.txt
     
-    - name: 上传可执行文件
+    - name: 创建输出目录
+      run: |
+        docker exec builder bash -c "cd /app && mkdir -p ${{ env.OUTPUT_DIR }}"
+    
+    - name: 打包所有Python脚本
+      run: |
+        docker exec builder bash -c "cd /app && \
+          while IFS= read -r script; do \
+            script_name=\$(basename \"\$script\" .py); \
+            echo \"正在打包: \$script_name\"; \
+            python3 -m PyInstaller -F \"\$script\" \
+              --name \"\$script_name\" \
+              --clean \
+              --runtime-tmpdir /tmp \
+              --distpath \"/app/${{ env.OUTPUT_DIR }}\"; \
+          done < /app/scripts_to_build.txt"
+    
+    - name: 打包ability目录下的脚本
+      run: |
+        docker exec builder bash -c "cd /app && \
+          if [ -d \"ability\" ]; then \
+            find ability -name '*.py' -type f > /app/ability_scripts.txt; \
+            while IFS= read -r script; do \
+              script_name=\$(basename \"\$script\" .py); \
+              echo \"正在打包ability脚本: \$script_name\"; \
+              python3 -m PyInstaller -F \"\$script\" \
+                --name \"ability_\$script_name\" \
+                --clean \
+                --runtime-tmpdir /tmp \
+                --distpath \"/app/${{ env.OUTPUT_DIR }}\"; \
+            done < /app/ability_scripts.txt; \
+          else \
+            echo \"ability目录不存在，跳过\"; \
+          fi"
+    
+    - name: 检查打包结果
+      run: |
+        ls -la ${{ env.OUTPUT_DIR }}
+        # 创建ZIP文件
+        zip -r linux_tools.zip ${{ env.OUTPUT_DIR }}
+        ls -la linux_tools.zip
+    
+    - name: 上传ZIP文件
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ env.CODE_NAME }}
-        path: dist/${{ env.CODE_NAME }}
+        name: linux_tools
+        path: linux_tools.zip
+    
+    - name: 上传单个可执行文件
+      uses: actions/upload-artifact@v4
+      with:
+        name: individual_tools
+        path: ${{ env.OUTPUT_DIR }}/*
