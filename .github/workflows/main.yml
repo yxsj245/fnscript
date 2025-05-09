@@ -16,8 +16,8 @@ jobs:
     - name: 设置Docker
       run: |
         docker pull debian:buster
-        docker create --name builder debian:buster
-        docker cp . builder:/app
+        # 创建并启动容器
+        docker run -d --name builder -v $PWD:/app debian:buster tail -f /dev/null
     
     - name: 在Docker中构建应用
       run: |
@@ -32,9 +32,8 @@ jobs:
             --clean \
             --runtime-tmpdir /tmp"
     
-    - name: 从Docker容器中复制构建结果
+    - name: 检查构建结果
       run: |
-        docker cp builder:/app/dist .
         ls -la dist
     
     - name: 上传可执行文件
