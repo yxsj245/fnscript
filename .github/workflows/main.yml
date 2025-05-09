@@ -5,13 +5,13 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     env:
       CODE_NAME: SystemDashboard # 定义文件名 
     strategy:
       fail-fast: false
       matrix:
-        python-version: [ "3.10" ]
+        python-version: [ "3.8" ]
 
     steps:
     # 签出代码
@@ -34,7 +34,7 @@ jobs:
     - name: 安装依赖
       run: |
         python -m pip install --upgrade pip
-        python -m pip install pyinstaller
+        python -m pip install pyinstaller==5.13.2
         python -m pip install textual psutil
 
     - name: 打包项目
@@ -44,7 +44,8 @@ jobs:
         # 打包主程序并包含所有需要的文件
         pyinstaller -F dashboard.py \
           --name "${{ env.CODE_NAME }}" \
-          --clean
+          --clean \
+          --runtime-tmpdir /tmp
 
     - name: 检查打包输出
       run: |
