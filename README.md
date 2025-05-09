@@ -1,4 +1,4 @@
-### 此脚本即将在为2.0版本进行大改动，界面和代码将进行重构
+### 此脚本即将在为2.0版本进行大改动，界面和代码将进行重构 
 # fnscript
 ## 一个专注于优化FnOS的脚本
 ![image](https://github.com/user-attachments/assets/91b6f851-e0c5-4609-bf4b-79eabdc90c7f)
