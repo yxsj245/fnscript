@@ -1,3 +1,4 @@
+# 次分支将停止维护，正在开发2.0版本
 # fnscript
 ## 一个专注于优化FnOS的脚本
 ![image](https://github.com/user-attachments/assets/91b6f851-e0c5-4609-bf4b-79eabdc90c7f)
