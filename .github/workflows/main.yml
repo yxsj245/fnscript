@@ -24,7 +24,7 @@ jobs:
       run: |
         docker exec builder bash -c "cd /app && \
           apt-get update && \
-          apt-get install -y zip && \
+          apt-get install -y zip binutils && \
           python -m pip install --upgrade pip && \
           python -m pip install pyinstaller==5.13.2 && \
           python -m pip install textual==3.2.0 psutil"
