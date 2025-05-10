@@ -284,7 +284,7 @@ class FileAnalysisResultScreen(Screen):
                         safe_id_name = "".join(c if c.isalnum() else "_" for c in subdir_name)
                         subdir_button = Button(
                             button_label,
-                            id=f"subdir_{safe_id_name}_{hash(subdir_name)}", 
+                            id=f"subdir_{safe_id_name}_{abs(hash(subdir_name))}", 
                             variant="primary", 
                             classes="subdir-button"
                         )
