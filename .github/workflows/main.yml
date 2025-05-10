@@ -29,9 +29,9 @@ jobs:
           python -m pip install pyinstaller==5.13.2 && \
           python -m pip install textual==3.2.0 psutil"
     
-    - name: 查找所有Python脚本
+    - name: 查找script目录下所有Python脚本
       run: |
-        docker exec builder bash -c "cd /app && find . -maxdepth 1 -name '*.py' -type f -not -path '*/\.*' > /app/scripts_to_build.txt"
+        docker exec builder bash -c "cd /app && find script -name '*.py' -type f -not -path '*/\.*' > /app/scripts_to_build.txt"
         echo "找到以下Python脚本:"
         cat scripts_to_build.txt
     
@@ -51,24 +51,6 @@ jobs:
               --runtime-tmpdir /tmp \
               --distpath \"/app/${{ env.OUTPUT_DIR }}\"; \
           done < /app/scripts_to_build.txt"
-    
-    - name: 打包ability目录下的脚本
-      run: |
-        docker exec builder bash -c "cd /app && \
-          if [ -d \"ability\" ]; then \
-            find ability -name '*.py' -type f > /app/ability_scripts.txt; \
-            while IFS= read -r script; do \
-              script_name=\$(basename \"\$script\" .py); \
-              echo \"正在打包ability脚本: \$script_name\"; \
-              python -m PyInstaller -F \"\$script\" \
-                --name \"ability_\$script_name\" \
-                --clean \
-                --runtime-tmpdir /tmp \
-                --distpath \"/app/${{ env.OUTPUT_DIR }}\"; \
-            done < /app/ability_scripts.txt; \
-          else \
-            echo \"ability目录不存在，跳过\"; \
-          fi"
     
     - name: 检查打包结果
       run: |
