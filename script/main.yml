@@ -1,0 +1,72 @@
+name: pack-linux-tools
+
+on:
+  workflow_dispatch:  # 允许手动触发工作流
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      OUTPUT_DIR: packed_tools # 定义输出目录名
+    
+    steps:
+    # 签出代码
+    - uses: actions/checkout@v4
+    
+    - name: 设置Docker
+      run: |
+        # 使用支持Python 3.12的基础镜像
+        docker pull python:3.12-slim
+        # 创建并启动容器
+        docker run -d --name builder -v $PWD:/app python:3.12-slim tail -f /dev/null
+    
+    - name: 安装依赖
+      run: |
+        docker exec builder bash -c "cd /app && \
+          apt-get update && \
+          apt-get install -y zip binutils && \
+          python -m pip install --upgrade pip && \
+          python -m pip install pyinstaller==5.13.2 && \
+          python -m pip install textual==3.2.0 psutil"
+    
+    - name: 查找所有Python脚本
+      run: |
+        docker exec builder bash -c "cd /app && find . -maxdepth 1 -name '*.py' -type f -not -path '*/\.*' > /app/scripts_to_build.txt"
+        echo "找到以下Python脚本:"
+        cat scripts_to_build.txt
+    
+    - name: 创建输出目录
+      run: |
+        docker exec builder bash -c "cd /app && mkdir -p ${{ env.OUTPUT_DIR }}"
+    
+    - name: 打包所有Python脚本
+      run: |
+        docker exec builder bash -c "cd /app && \
+          while IFS= read -r script; do \
+            script_name=\$(basename \"\$script\" .py); \
+            echo \"正在打包: \$script_name\"; \
+            python -m PyInstaller -F \"\$script\" \
+              --name \"\$script_name\" \
+              --clean \
+              --runtime-tmpdir /tmp \
+              --distpath \"/app/${{ env.OUTPUT_DIR }}\"; \
+          done < /app/scripts_to_build.txt"
+    
+    - name: 检查打包结果
+      run: |
+        ls -la ${{ env.OUTPUT_DIR }}
+        # 创建ZIP文件
+        zip -r linux_tools.zip ${{ env.OUTPUT_DIR }}
+        ls -la linux_tools.zip
+    
+    - name: 上传ZIP文件
+      uses: actions/upload-artifact@v4
+      with:
+        name: linux_tools
+        path: linux_tools.zip
+    
+    - name: 上传单个可执行文件
+      uses: actions/upload-artifact@v4
+      with:
+        name: individual_tools
+        path: ${{ env.OUTPUT_DIR }}/*
