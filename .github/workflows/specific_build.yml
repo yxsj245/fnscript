@@ -6,7 +6,7 @@ on:
 # 在这里定义要打包的脚本列表
 env:
   # 要打包的脚本列表，用空格分隔
-  SCRIPTS_TO_BUILD: "cdmount.py Powermanagement.py menu.py"
+  SCRIPTS_TO_BUILD: "filestorage.py"
   OUTPUT_DIR: packed_specific_tools # 定义输出目录名
 
 jobs:
