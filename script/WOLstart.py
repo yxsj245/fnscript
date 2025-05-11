@@ -6,11 +6,11 @@ import argparse
 
 # 尝试导入textual库，如果不可用则使用命令行模式
 try:
-from textual.app import App, ComposeResult
-from textual.widgets import Header, Footer, Static, Button, Label, Select, Input
-from textual.containers import Container, Horizontal, Vertical
-from textual.screen import Screen, ModalScreen
-import asyncio
+    from textual.app import App, ComposeResult
+    from textual.widgets import Header, Footer, Static, Button, Label, Select, Input
+    from textual.containers import Container, Horizontal, Vertical
+    from textual.screen import Screen, ModalScreen
+    import asyncio
     TEXTUAL_AVAILABLE = True
 except ImportError:
     TEXTUAL_AVAILABLE = False
@@ -166,7 +166,7 @@ def cli_prevent_wol_auto_restore(interface: str):
         
         print(f"{GREEN}已配置NetworkManager以防止接口 {interface} 自动恢复WOL设置。{RESET}")
         return True
-            except Exception as e:
+    except Exception as e:
         print(f"{RED}配置NetworkManager时发生意外错误: {str(e)}{RESET}")
         return False
 
@@ -255,305 +255,305 @@ def cli_main():
 
 # 以下是基于textual的GUI代码
 if TEXTUAL_AVAILABLE:
-# 确认对话框
-class ConfirmDialog(ModalScreen):
-    """确认对话框"""
-    
-    def __init__(self, message: str, action_callback=None):
-        super().__init__()
-        self.message = message
-        self.action_callback = action_callback
-    
-    def compose(self) -> ComposeResult:
-        with Container(id="dialog-container"):
-            yield Label(f"[yellow]{self.message}[/yellow]", id="dialog-title")
-            with Horizontal(id="dialog-buttons"):
-                yield Button("确认", id="confirm", variant="primary")
-                yield Button("取消", id="cancel", variant="error")
-    
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "confirm" and self.action_callback:
+    # 确认对话框
+    class ConfirmDialog(ModalScreen):
+        """确认对话框"""
+        
+        def __init__(self, message: str, action_callback=None):
+            super().__init__()
+            self.message = message
+            self.action_callback = action_callback
+        
+        def compose(self) -> ComposeResult:
+            with Container(id="dialog-container"):
+                yield Label(f"[yellow]{self.message}[/yellow]", id="dialog-title")
+                with Horizontal(id="dialog-buttons"):
+                    yield Button("确认", id="confirm", variant="primary")
+                    yield Button("取消", id="cancel", variant="error")
+        
+        def on_button_pressed(self, event: Button.Pressed) -> None:
+            if event.button.id == "confirm" and self.action_callback:
+                self.dismiss(True)
+                self.action_callback()
+            else:
+                self.dismiss(False)
+
+    # 成功提示对话框
+    class SuccessDialog(ModalScreen):
+        """成功提示对话框"""
+        
+        def __init__(self, message: str):
+            super().__init__()
+            self.message = message
+        
+        def compose(self) -> ComposeResult:
+            with Container(id="dialog-container"):
+                yield Label(f"[green]{self.message}[/green]", id="dialog-title")
+                with Horizontal(id="dialog-buttons"):
+                    yield Button("确定", id="ok", variant="primary")
+        
+        def on_button_pressed(self, event: Button.Pressed) -> None:
             self.dismiss(True)
-            self.action_callback()
-        else:
-            self.dismiss(False)
 
-# 成功提示对话框
-class SuccessDialog(ModalScreen):
-    """成功提示对话框"""
-    
-    def __init__(self, message: str):
-        super().__init__()
-        self.message = message
-    
-    def compose(self) -> ComposeResult:
-        with Container(id="dialog-container"):
-            yield Label(f"[green]{self.message}[/green]", id="dialog-title")
-            with Horizontal(id="dialog-buttons"):
-                yield Button("确定", id="ok", variant="primary")
-    
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        self.dismiss(True)
+    # 错误提示对话框
+    class ErrorDialog(ModalScreen):
+        """错误提示对话框"""
+        
+        def __init__(self, message: str):
+            super().__init__()
+            self.message = message
+        
+        def compose(self) -> ComposeResult:
+            with Container(id="dialog-container"):
+                yield Label(f"[red]{self.message}[/red]", id="dialog-title")
+                with Horizontal(id="dialog-buttons"):
+                    yield Button("确定", id="ok", variant="primary")
+        
+        def on_button_pressed(self, event: Button.Pressed) -> None:
+            self.dismiss(True)
 
-# 错误提示对话框
-class ErrorDialog(ModalScreen):
-    """错误提示对话框"""
-    
-    def __init__(self, message: str):
-        super().__init__()
-        self.message = message
-    
-    def compose(self) -> ComposeResult:
-        with Container(id="dialog-container"):
-            yield Label(f"[red]{self.message}[/red]", id="dialog-title")
-            with Horizontal(id="dialog-buttons"):
-                yield Button("确定", id="ok", variant="primary")
-    
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        self.dismiss(True)
+    # 主应用
+    class WOLApp(App):
+        CSS = """
+        Screen {
+            background: $surface;
+        }
+        
+        #title {
+            dock: top;
+            text-align: center;
+            text-style: bold;
+            background: $accent;
+            color: $text;
+            padding: 1;
+            margin-bottom: 1;
+        }
+        
+        #main-container {
+            width: 100%;
+            height: auto;
+            padding: 1;
+        }
+        
+        #interface-container {
+            width: 100%;
+            height: auto;
+            margin: 1;
+            border: solid $primary;
+            padding: 1;
+        }
+        
+        #interface-label {
+            margin-bottom: 1;
+        }
+        
+        #interface-select {
+            width: 100%;
+            margin-bottom: 1;
+        }
+        
+        #status-container {
+            width: 100%;
+            height: auto;
+            margin: 1;
+            border: solid $primary;
+            padding: 1;
+        }
+        
+        #wol-status {
+            margin: 1;
+            padding: 1;
+        }
+        
+        #action-buttons {
+            width: 100%;
+            height: auto;
+            margin: 1;
+            padding: 1;
+        }
+        
+        #enable-wol, #disable-wol {
+            margin: 1;
+            min-width: 30;
+            min-height: 3;
+        }
+        
+        #enable-wol {
+            background: $success-darken-1;
+            color: $text;
+            border: tall $success;
+        }
+        
+        #enable-wol:hover {
+            background: $success;
+        }
+        
+        #disable-wol {
+            background: $error-darken-1;
+            color: $text;
+            border: tall $error;
+        }
+        
+        #disable-wol:hover {
+            background: $error;
+        }
+        
+        #status {
+            height: auto;
+            min-height: 3;
+            margin: 1;
+            padding: 1;
+            border: solid $accent;
+            background: $surface-darken-1;
+        }
+        
+        /* 对话框样式 */
+        #dialog-container {
+            width: 60%;
+            height: auto;
+            padding: 2;
+            background: $surface;
+            border: thick $accent;
+            margin: 1 0;
+        }
+        
+        /* 成功对话框样式 */
+        SuccessDialog #dialog-container {
+            border: thick $success;
+        }
+        
+        /* 错误对话框样式 */
+        ErrorDialog #dialog-container {
+            border: thick $error;
+        }
+        
+        /* 确认对话框样式 */
+        ConfirmDialog #dialog-container {
+            border: thick $warning;
+        }
+        
+        #dialog-title {
+            text-align: center;
+            width: 100%;
+            margin-bottom: 2;
+        }
+        
+        #dialog-buttons {
+            align: center middle;
+            width: 100%;
+        }
+        
+        #dialog-buttons Button {
+            margin: 0 2;
+            min-width: 10;
+        }
+        
+        /* 按钮样式增强 */
+        Button {
+            background: $primary;
+            border: tall $primary-lighten-2;
+            padding: 1 2;
+        }
+        
+        Button:hover {
+            background: $primary-lighten-1;
+        }
+        
+        Button#confirm {
+            background: $success-darken-1;
+            border: tall $success;
+        }
+        
+        Button#confirm:hover {
+            background: $success;
+        }
+        
+        Button#cancel {
+            background: $error-darken-1;
+            border: tall $error;
+        }
+        
+        Button#cancel:hover {
+            background: $error;
+        }
+        
+        Button#ok {
+            background: $primary-darken-1;
+            border: tall $primary;
+        }
+        
+        Button#ok:hover {
+            background: $primary;
+        }
+        
+        /* 修复Textual 3.2.0中Select的样式问题 */
+        Select {
+            background: $boost;
+            border: tall $primary;
+        }
+        """
 
-# 主应用
-class WOLApp(App):
-    CSS = """
-    Screen {
-        background: $surface;
-    }
-    
-    #title {
-        dock: top;
-        text-align: center;
-        text-style: bold;
-        background: $accent;
-        color: $text;
-        padding: 1;
-        margin-bottom: 1;
-    }
-    
-    #main-container {
-        width: 100%;
-        height: auto;
-        padding: 1;
-    }
-    
-    #interface-container {
-        width: 100%;
-        height: auto;
-        margin: 1;
-        border: solid $primary;
-        padding: 1;
-    }
-    
-    #interface-label {
-        margin-bottom: 1;
-    }
-    
-    #interface-select {
-        width: 100%;
-        margin-bottom: 1;
-    }
-    
-    #status-container {
-        width: 100%;
-        height: auto;
-        margin: 1;
-        border: solid $primary;
-        padding: 1;
-    }
-    
-    #wol-status {
-        margin: 1;
-        padding: 1;
-    }
-    
-    #action-buttons {
-        width: 100%;
-        height: auto;
-        margin: 1;
-        padding: 1;
-    }
-    
-    #enable-wol, #disable-wol {
-        margin: 1;
-        min-width: 30;
-        min-height: 3;
-    }
-    
-    #enable-wol {
-        background: $success-darken-1;
-        color: $text;
-        border: tall $success;
-    }
-    
-    #enable-wol:hover {
-        background: $success;
-    }
-    
-    #disable-wol {
-        background: $error-darken-1;
-        color: $text;
-        border: tall $error;
-    }
-    
-    #disable-wol:hover {
-        background: $error;
-    }
-    
-    #status {
-        height: auto;
-        min-height: 3;
-        margin: 1;
-        padding: 1;
-        border: solid $accent;
-        background: $surface-darken-1;
-    }
-    
-    /* 对话框样式 */
-    #dialog-container {
-        width: 60%;
-        height: auto;
-        padding: 2;
-        background: $surface;
-        border: thick $accent;
-        margin: 1 0;
-    }
-    
-    /* 成功对话框样式 */
-    SuccessDialog #dialog-container {
-        border: thick $success;
-    }
-    
-    /* 错误对话框样式 */
-    ErrorDialog #dialog-container {
-        border: thick $error;
-    }
-    
-    /* 确认对话框样式 */
-    ConfirmDialog #dialog-container {
-        border: thick $warning;
-    }
-    
-    #dialog-title {
-        text-align: center;
-        width: 100%;
-        margin-bottom: 2;
-    }
-    
-    #dialog-buttons {
-        align: center middle;
-        width: 100%;
-    }
-    
-    #dialog-buttons Button {
-        margin: 0 2;
-        min-width: 10;
-    }
-    
-    /* 按钮样式增强 */
-    Button {
-        background: $primary;
-        border: tall $primary-lighten-2;
-        padding: 1 2;
-    }
-    
-    Button:hover {
-        background: $primary-lighten-1;
-    }
-    
-    Button#confirm {
-        background: $success-darken-1;
-        border: tall $success;
-    }
-    
-    Button#confirm:hover {
-        background: $success;
-    }
-    
-    Button#cancel {
-        background: $error-darken-1;
-        border: tall $error;
-    }
-    
-    Button#cancel:hover {
-        background: $error;
-    }
-    
-    Button#ok {
-        background: $primary-darken-1;
-        border: tall $primary;
-    }
-    
-    Button#ok:hover {
-        background: $primary;
-    }
-    
-    /* 修复Textual 3.2.0中Select的样式问题 */
-    Select {
-        background: $boost;
-        border: tall $primary;
-    }
-    """
+        BINDINGS = [
+            ("q", "quit", "退出"),
+            ("escape", "quit", "退出"),
+            ("r", "refresh", "刷新状态"),
+        ]
 
-    BINDINGS = [
-        ("q", "quit", "退出"),
-        ("escape", "quit", "退出"),
-        ("r", "refresh", "刷新状态"),
-    ]
-
-    def __init__(self):
-        super().__init__()
-        self.interfaces = []
-        self.selected_interface = None
+        def __init__(self):
+            super().__init__()
+            self.interfaces = []
+            self.selected_interface = None
             self.wol_status_char = "未知" # 改为存储字符 g, d 等
-    
-    def compose(self) -> ComposeResult:
-        yield Header(show_clock=True)
-        yield Footer()
         
-        with Container(id="main-container"):
-            yield Label("[b]网络唤醒（Wake-on-LAN）配置工具[/b]", id="title")
+        def compose(self) -> ComposeResult:
+            yield Header(show_clock=True)
+            yield Footer()
             
-            with Container(id="interface-container"):
-                yield Label("加载网络接口中...", id="interface-label")
-                yield Select(id="interface-select", options=[("加载中...", "loading")], disabled=True)
-            
-            with Container(id="status-container"):
-                yield Label("Wake-on-LAN 状态: 未知", id="wol-status")
-            
-            with Container(id="action-buttons"):
-                yield Button("启用 Wake-on-LAN", id="enable-wol", disabled=True)
-                yield Button("禁用 Wake-on-LAN", id="disable-wol", disabled=True)
-            
-            yield Static("准备就绪，请选择网络接口。", id="status")
-    
-    def on_mount(self) -> None:
-        self.load_interfaces()
-    
-    def action_refresh(self) -> None:
-        self.load_interfaces()
-    
-    def load_interfaces(self) -> None:
-        status = self.query_one("#status")
-        status.update("正在加载网络接口...")
-        asyncio.create_task(self.do_load_interfaces())
-    
-    async def do_load_interfaces(self) -> None:
-        interface_label = self.query_one("#interface-label")
-        status = self.query_one("#status")
+            with Container(id="main-container"):
+                yield Label("[b]网络唤醒（Wake-on-LAN）配置工具[/b]", id="title")
+                
+                with Container(id="interface-container"):
+                    yield Label("加载网络接口中...", id="interface-label")
+                    yield Select(id="interface-select", options=[("加载中...", "loading")], disabled=True)
+                
+                with Container(id="status-container"):
+                    yield Label("Wake-on-LAN 状态: 未知", id="wol-status")
+                
+                with Container(id="action-buttons"):
+                    yield Button("启用 Wake-on-LAN", id="enable-wol", disabled=True)
+                    yield Button("禁用 Wake-on-LAN", id="disable-wol", disabled=True)
+                
+                yield Static("准备就绪，请选择网络接口。", id="status")
+        
+        def on_mount(self) -> None:
+            self.load_interfaces()
+        
+        def action_refresh(self) -> None:
+            self.load_interfaces()
+        
+        def load_interfaces(self) -> None:
+            status = self.query_one("#status")
+            status.update("正在加载网络接口...")
+            asyncio.create_task(self.do_load_interfaces())
+        
+        async def do_load_interfaces(self) -> None:
+            interface_label = self.query_one("#interface-label")
+            status = self.query_one("#status")
             interface_select = self.query_one(Select) # 直接获取Select实例
-        
-        self.interfaces = await asyncio.to_thread(get_network_interfaces)
-        
-        if not self.interfaces:
-            interface_label.update("[red]未找到物理网口！[/red]")
+
+            self.interfaces = await asyncio.to_thread(get_network_interfaces)
+            
+            if not self.interfaces:
+                interface_label.update("[red]未找到物理网口！[/red]")
                 interface_select.set_options([("未找到网络接口", "none")])
                 interface_select.value = "none"
-            interface_select.disabled = True
-            self.query_one("#enable-wol").disabled = True
-            self.query_one("#disable-wol").disabled = True
-            status.update("[red]未找到可用的网络接口[/red]")
+                interface_select.disabled = True
+                self.query_one("#enable-wol").disabled = True
+                self.query_one("#disable-wol").disabled = True
+                status.update("[red]未找到可用的网络接口[/red]")
                 return
             
-        options = [(f"{iface}", iface) for iface in self.interfaces]
+            options = [(f"{iface}", iface) for iface in self.interfaces]
             interface_select.set_options(options) # 使用 set_options 更新选项
             
             if options:
@@ -572,13 +572,13 @@ class WOLApp(App):
                 self.query_one("#wol-status").update("Wake-on-LAN 状态: 未选择接口")
                 self.query_one("#enable-wol").disabled = True
                 self.query_one("#disable-wol").disabled = True
-            return
-        
-        wol_status_label = self.query_one("#wol-status")
+                return
+
+            wol_status_label = self.query_one("#wol-status")
             status_widget = self.query_one("#status") # Renamed from 'status' to avoid conflict
-        
+            
             status_widget.update(f"正在检查 {interface} 的 Wake-on-LAN 状态...")
-        
+            
             self.wol_status_char = await asyncio.to_thread(check_wol_status, interface)
             
             if self.wol_status_char == 'g':
@@ -599,8 +599,8 @@ class WOLApp(App):
                 self.query_one("#disable-wol").disabled = False # 允许禁用 (变回 d)
 
             status_widget.update(f"{interface} 的 Wake-on-LAN 状态已更新")
-    
-    def on_select_changed(self, event: Select.Changed) -> None:
+
+        def on_select_changed(self, event: Select.Changed) -> None:
             self.selected_interface = str(event.value) #确保是字符串
             if self.selected_interface and self.selected_interface not in ["none", "loading"]:
                 asyncio.create_task(self.update_wol_status_display(self.selected_interface))
@@ -608,27 +608,27 @@ class WOLApp(App):
                 self.query_one("#wol-status").update("Wake-on-LAN 状态: 未选择接口")
                 self.query_one("#enable-wol").disabled = True
                 self.query_one("#disable-wol").disabled = True
-    
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        button_id = event.button.id
+        
+        def on_button_pressed(self, event: Button.Pressed) -> None:
+            button_id = event.button.id
             
             if not self.selected_interface or self.selected_interface in ["none", "loading"]:
                 self.query_one("#status").update("[red]请先选择一个有效的网络接口。[/red]")
                 return
-        
-        if button_id == "enable-wol":
+
+            if button_id == "enable-wol":
                 asyncio.create_task(self.do_set_wol_gui(self.selected_interface, True))
-        elif button_id == "disable-wol":
+            elif button_id == "disable-wol":
                 asyncio.create_task(self.do_set_wol_gui(self.selected_interface, False))
-    
+        
         async def do_set_wol_gui(self, interface: str, enable: bool) -> None:
             """异步设置WOL状态 (GUI版本)"""
             status_widget = self.query_one("#status")
-        mode = "g" if enable else "d"
-        action_text = "启用" if enable else "禁用"
-        
+            mode = "g" if enable else "d"
+            action_text = "启用" if enable else "禁用"
+            
             status_widget.update(f"[blue]正在为 {interface} {action_text} Wake-on-LAN...[/blue]")
-        
+            
             cmd = f"sudo ethtool -s {interface} wol {mode}"
             result = await asyncio.to_thread(run_command, cmd, True)
 
@@ -680,5 +680,5 @@ if __name__ == "__main__":
         # 如果没有其他参数，cli_main会打印帮助信息
         cli_main()
     else: # 默认情况：无参数且Textual可用，则启动GUI
-    app = WOLApp()
-    app.run() 
+        app = WOLApp()
+        app.run() 
