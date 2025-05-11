@@ -1,11 +1,26 @@
 #!/usr/bin/env python
+import os
+import subprocess
+import sys
+import argparse
+
+# 尝试导入textual库，如果不存在则设置标志
+HAS_TEXTUAL = True
+try:
 from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer, Static, Button, Label, Input
 from textual.containers import Container, Horizontal, Vertical
 from textual.screen import Screen, ModalScreen
-import os
-import subprocess
 import asyncio
+except ImportError:
+    HAS_TEXTUAL = False
+    # 如果没有textual但尝试无参数运行，我们需要提示用户
+    if len(sys.argv) == 1:
+        print("错误: 未安装textual库，无法启动图形界面。")
+        print("您可以通过命令行参数使用此脚本的核心功能:")
+        print("  转换磁盘映像:  python qcowtools.py -s <源文件路径> [-t <目标文件名>] [-f <目标格式>]")
+        print("  查看帮助:      python qcowtools.py -h")
+        sys.exit(1)
 
 # 定义颜色常量（保留以兼容原始代码）
 RESET = "\033[0m"
@@ -65,6 +80,64 @@ def convert_image(source_path, target_name=None, target_format='qcow2'):
     return run_command(command)
 
 
+# 命令行直接执行转换的函数
+def cli_convert_image(source_path, target_name=None, target_format='qcow2'):
+    """通过命令行直接转换磁盘映像
+    
+    Args:
+        source_path (str): 源文件路径
+        target_name (str, optional): 目标文件名，如果为None则自动生成
+        target_format (str, optional): 目标格式，默认为qcow2
+        
+    Returns:
+        bool: 是否成功转换
+    """
+    # 验证输入
+    if not source_path:
+        print("错误：请输入源文件路径！")
+        return False
+    
+    # 确保文件路径存在
+    if not os.path.isfile(source_path):
+        print(f"错误：源文件不存在！路径：{source_path}")
+        return False
+    
+    # 计算目标路径（用于显示）
+    if not target_name:
+        target_name = os.path.splitext(os.path.basename(source_path))[0] + '.' + target_format
+    
+    target_path = os.path.join(os.path.dirname(source_path), target_name)
+    
+    print(f"正在转换中,请稍后...(预计1分钟内完成)")
+    
+    # 执行转换
+    result = convert_image(source_path, target_name, target_format)
+    
+    if result['status_code'] == 0:
+        print(f"转换成功！目标文件路径：{target_path}")
+        return True
+    else:
+        if 'Unknown file format' in result['stderr']:
+            print(f"转换失败\n错误输出:未知文件格式\n建议操作：请确认输入的转换类型")
+        else:
+            print(f"转换失败！错误信息：{result['stderr']}")
+        return False
+
+
+def parse_arguments():
+    """解析命令行参数"""
+    parser = argparse.ArgumentParser(description='QEMU 磁盘映像转换工具')
+    parser.add_argument('-s', '--source', 
+                        help='源文件路径')
+    parser.add_argument('-t', '--target', 
+                        help='目标文件名（可选，默认自动生成）')
+    parser.add_argument('-f', '--format', default='qcow2',
+                        help='目标格式（可选，默认为qcow2）')
+    return parser.parse_args()
+
+
+# 只有在导入了textual库的情况下才定义这些类
+if HAS_TEXTUAL:
 # 添加成功提示对话框
 class SuccessDialog(ModalScreen):
     """成功提示对话框"""
@@ -323,5 +396,21 @@ class QcowToolsApp(App):
 
 
 if __name__ == "__main__":
+    args = parse_arguments()
+    
+    # 如果指定了命令行参数，则直接执行相应功能
+    if args.source:
+        success = cli_convert_image(args.source, args.target, args.format)
+        sys.exit(0 if success else 1)
+    
+    # 如果没有指定命令行参数，则启动图形界面（如果textual可用）
+    if HAS_TEXTUAL:
     app = QcowToolsApp()
     app.run() 
+    else:
+        # 这种情况不应该发生，因为在导入时已经处理了，但为了代码完整性保留
+        print("错误: 未安装textual库，无法启动图形界面。")
+        print("您可以通过命令行参数使用此脚本的核心功能:")
+        print("  转换磁盘映像:  python qcowtools.py -s <源文件路径> [-t <目标文件名>] [-f <目标格式>]")
+        print("  查看帮助:      python qcowtools.py -h")
+        sys.exit(1) 

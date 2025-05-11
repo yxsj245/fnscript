@@ -186,7 +186,7 @@ class CDMountApp(App):
         background: $surface;
     }
     
-    #title, #warning-title {
+    #title {
         dock: top;
         text-align: center;
         text-style: bold;
@@ -227,18 +227,6 @@ class CDMountApp(App):
         border: solid $accent;
         background: $surface-darken-1;
     }
-    
-    #warning-text, #safe-text {
-        margin: 1;
-        padding: 1;
-    }
-    
-    #warning-container {
-        width: 100%;
-        height: 100%;
-        padding: 2;
-        background: $surface;
-    }
     """
 
     BINDINGS = [
@@ -247,34 +235,26 @@ class CDMountApp(App):
     ]
 
     def compose(self) -> ComposeResult:
-        yield Header(show_clock=True)
-        yield Footer()
-        
-        # 直接在主应用中显示风险提示
-        with Container(id="warning-container"):
-            yield Label("[b]CD/DVD挂载工具 - 风险提示[/b]", id="warning-title")
-            yield Label("[red]风险告知：由于此脚本中运行的指令涉及在root用户下才能运行，脚本会创建一个root终端执行相应命令并在执行完毕后自动关闭。由于root权限强大，为了保证数据安全，请您务必在执行前经过测试或数据备份再进行！对此出现的意外情况，作者不承担任何责任。[/red]", id="warning-text")
-            yield Label("[blue]此方法中不存在删除文件等其它敏感操作，您可以放心运行！[/blue]", id="safe-text")
-            
-            with Horizontal():
-                yield Button("继续", id="continue", variant="primary")
-                yield Button("退出", id="exit", variant="error")
-    
+        # 直接显示主界面，不再有风险提示
+        # Header 和 Footer 会在 CDMountScreen 中创建
+        yield from () # 确保 compose 是一个生成器
+
     def on_mount(self) -> None:
         """应用挂载时执行"""
-        # 确保风险提示文本可见
-        self.query_one("#warning-text").styles.visibility = "visible"
-        self.query_one("#safe-text").styles.visibility = "visible"
+        # 直接显示主界面
+        self.push_screen(CDMountScreen())
     
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """按钮点击事件处理"""
-        if event.button.id == "continue":
-            # 隐藏风险提示
-            self.query_one("#warning-container").remove()
-            # 显示主界面
-            self.push_screen(CDMountScreen())
-        elif event.button.id == "exit":
-            self.exit()
+        # 由于风险提示已删除，此处的按钮逻辑不再需要
+        # if event.button.id == "continue":
+        #     # 隐藏风险提示
+        #     self.query_one("#warning-container").remove()
+        #     # 显示主界面
+        #     self.push_screen(CDMountScreen())
+        # elif event.button.id == "exit":
+        #     self.exit()
+        pass # 保留方法结构，但无操作
 
 if __name__ == "__main__":
     app = CDMountApp()

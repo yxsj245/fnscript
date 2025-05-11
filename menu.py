@@ -46,13 +46,16 @@ MENU_CONFIG = {
         ("开启IOMMU", "startIOMMU.py"),
         ("管理swap", "swapinfo.py"),
     ],
-    "网卡设置": [
+    "网卡/网络 设置": [
         ("开启WOL网络唤醒", "WOLstart.py"),
+        ("网络诊断与修改", "network_diagnostic_tool.py"),
     ],
     "工具": [
         ("分析目录文件大小", "filestorage.py"),
         ("安装虚拟机工具", "vmtoolses.py"),
         ("挂载物理CD/DVD", "cdmount.py"),
+        ("qcow2转换工具", "qcowtools.py"),
+        ("硬件压测", "self_inspection.py"),
     ]
     # 您可以根据需要添加更多分类
 }

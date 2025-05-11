@@ -1,11 +1,19 @@
 #!/usr/bin/env python
+import os
+import subprocess
+import sys
+import argparse
+
+# 尝试导入textual库，如果不可用则使用命令行模式
+try:
 from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer, Static, Button, Label, Select, Input
 from textual.containers import Container, Horizontal, Vertical
 from textual.screen import Screen, ModalScreen
-import os
-import subprocess
 import asyncio
+    TEXTUAL_AVAILABLE = True
+except ImportError:
+    TEXTUAL_AVAILABLE = False
 
 # 定义颜色常量（保留以兼容原始代码）
 RESET = "\033[0m"
@@ -34,16 +42,18 @@ def run_command(command, shell=False):
     try:
         if shell:
             process_result = subprocess.run(command, shell=True, check=True, stdout=subprocess.PIPE,
-                                          stderr=subprocess.PIPE)
+                                          stderr=subprocess.PIPE, text=True)
         else:
             process_result = subprocess.run(command, check=True, stdout=subprocess.PIPE,
-                                          stderr=subprocess.PIPE)
+                                          stderr=subprocess.PIPE, text=True)
             
-        result['stdout'] = process_result.stdout.decode()
+        result['stdout'] = process_result.stdout
         return result
     except subprocess.CalledProcessError as e:
         result['status_code'] = 1
-        result['stderr'] = e.stderr.decode()
+        result['stderr'] = e.stderr
+        if isinstance(result['stderr'], bytes):
+            result['stderr'] = result['stderr'].decode(errors='ignore')
         return result
 
 def get_network_interfaces():
@@ -75,22 +85,176 @@ def check_wol_status(interface):
     """检查指定网卡的 Wake-on-LAN 状态"""
     result = run_command(f"ethtool {interface}", shell=True)
     if result['status_code'] != 0:
+        print(f"{RED}获取 {interface} WOL状态失败: {result['stderr']}{RESET}")
         return "未知"
     
-    # 打印完整的ethtool输出以便诊断
-    print(f"ethtool {interface} 输出:\n{result['stdout']}")
-    
-    wol_status = "未知"
+    wol_status_char = "未知"
     for line in result['stdout'].split("\n"):
-        if "Wake-on" in line:
+        if "Wake-on:" in line: # 确保匹配的是 Wake-on: 行
             try:
-                wol_status = line.split(":")[1].strip()
-                print(f"识别到Wake-on状态值: '{wol_status}'")
-            except Exception as e:
-                print(f"解析Wake-on状态时出错: {str(e)}")
-    
-    return wol_status
+                # 通常 Wake-on: g 或者 Wake-on: d
+                status_part = line.split("Wake-on:")[1].strip()
+                if status_part:
+                    wol_status_char = status_part[0] # 取第一个字符，如 g 或 d
+                break 
+            except IndexError:
+                pass # 如果分割失败，保持未知
+    return wol_status_char
 
+# 命令行功能实现
+def cli_list_interfaces():
+    """列出所有物理网络接口"""
+    interfaces = get_network_interfaces()
+    if not interfaces:
+        print(f"{YELLOW}未找到物理网络接口。{RESET}")
+        return
+    print(f"{BOLD}可用的物理网络接口:{RESET}")
+    for iface in interfaces:
+        print(f"- {iface}")
+
+def cli_check_wol_status(interface):
+    """检查指定接口的WOL状态"""
+    print(f"{BLUE}正在检查接口 {interface} 的WOL状态...{RESET}")
+    status_char = check_wol_status(interface)
+    
+    if status_char == 'g':
+        print(f"接口 {GREEN}{interface}{RESET} 的WOL状态: {GREEN}已启用 (g){RESET}")
+    elif status_char == 'd':
+        print(f"接口 {RED}{interface}{RESET} 的WOL状态: {RED}已禁用 (d){RESET}")
+    elif status_char == "未知":
+        print(f"接口 {YELLOW}{interface}{RESET} 的WOL状态: {YELLOW}未知 (无法获取或解析){RESET}")
+    else: # 其他字符，例如 p, u, m, b, a, s
+        print(f"接口 {YELLOW}{interface}{RESET} 的WOL状态: {YELLOW}支持, 但当前为: {status_char}{RESET}")
+
+def cli_prevent_wol_auto_restore(interface: str):
+    """防止NetworkManager等自动恢复WOL设置 (CLI版本)"""
+    try:
+        nm_check = run_command("which nmcli", shell=True)
+        if nm_check['status_code'] != 0:
+            print(f"{YELLOW}未检测到NetworkManager，跳过自动恢复配置。{RESET}")
+            return True # 视为成功，因为没有NM来干扰
+
+        nm_dir = "/etc/NetworkManager/conf.d"
+        nm_file = f"{nm_dir}/90-disable-wol-{interface}.conf"
+        
+        # 确认目录存在
+        # 使用 sudo 创建目录
+        dir_check_cmd = f"sudo mkdir -p {nm_dir}"
+        print(f"执行: {dir_check_cmd}")
+        dir_check = run_command(dir_check_cmd, shell=True)
+        if dir_check['status_code'] != 0:
+            print(f"{RED}创建目录 {nm_dir} 失败: {dir_check['stderr']}{RESET}")
+            return False
+            
+        # 创建配置文件内容
+        config_content = f"[connection]\nmatch-device=interface-name:{interface}\nethernet.wake-on-lan=0"
+        # 使用 sudo tee 写入文件
+        write_cmd = f"echo -e '{config_content}' | sudo tee {nm_file}"
+        print(f"执行: {write_cmd}")
+        write_result = run_command(write_cmd, shell=True)
+        if write_result['status_code'] != 0:
+            print(f"{RED}创建NetworkManager配置文件 {nm_file} 失败: {write_result['stderr']}{RESET}")
+            return False
+            
+        # 重启NetworkManager服务
+        restart_cmd = "sudo systemctl restart NetworkManager"
+        print(f"执行: {restart_cmd}")
+        restart_result = run_command(restart_cmd, shell=True)
+        if restart_result['status_code'] !=0:
+            print(f"{YELLOW}重启 NetworkManager 可能失败或权限不足: {restart_result['stderr']}. 请手动重启以使更改生效。{RESET}")
+            # 即使重启失败，配置文件已写入，所以不立即返回False
+        
+        print(f"{GREEN}已配置NetworkManager以防止接口 {interface} 自动恢复WOL设置。{RESET}")
+        return True
+            except Exception as e:
+        print(f"{RED}配置NetworkManager时发生意外错误: {str(e)}{RESET}")
+        return False
+
+def cli_set_wol_status(interface, enable):
+    """启用或禁用指定接口的WOL (CLI版本)"""
+    action = "启用" if enable else "禁用"
+    mode = "g" if enable else "d"
+    
+    print(f"{BLUE}正在为接口 {interface} {action} WOL...{RESET}")
+    
+    # 设置WOL状态
+    cmd = f"sudo ethtool -s {interface} wol {mode}"
+    print(f"执行: {cmd}")
+    result = run_command(cmd, shell=True)
+    if result['status_code'] != 0:
+        print(f"{RED}{action}WOL失败: {result['stderr']}{RESET}")
+        return False
+    
+    print(f"{GREEN}接口 {interface} 的WOL已成功{action}。{RESET}")
+    
+    # 配置自启动 (crontab)
+    cron_job_enable = f"@reboot /sbin/ethtool -s {interface} wol g"
+    # 先移除旧的该接口的WOL crontab 条目，避免重复
+    cron_remove_cmd = f"(crontab -l 2>/dev/null | grep -v \"ethtool -s {interface} wol \" ; echo \"\" ) | crontab -"
+    print(f"执行: {cron_remove_cmd}")
+    run_command(cron_remove_cmd, shell=True) # 忽略错误，可能crontab为空
+
+    if enable:
+        cron_add_cmd = f"(crontab -l 2>/dev/null; echo \"{cron_job_enable}\") | crontab -"
+        print(f"执行: {cron_add_cmd}")
+        result = run_command(cron_add_cmd, shell=True)
+        if result['status_code'] != 0:
+            print(f"{RED}添加WOL自启动项到crontab失败: {result['stderr']}{RESET}")
+        else:
+            print(f"{GREEN}已添加WOL自启动项到crontab。{RESET}")
+    else: # 禁用时，我们已经移除了所有相关的cron job
+        print(f"{GREEN}已从crontab移除 {interface} 的WOL自启动项 (如有)。{RESET}")
+        # 对于禁用操作，尝试配置NetworkManager
+        if not cli_prevent_wol_auto_restore(interface):
+            print(f"{YELLOW}警告: 可能无法完全阻止NetworkManager或其他服务自动恢复WOL设置。{RESET}")
+            
+    return True
+
+def parse_arguments():
+    """解析命令行参数"""
+    parser = argparse.ArgumentParser(description="网络唤醒 (Wake-on-LAN) 配置工具")
+    parser.add_argument("--list-interfaces", action="store_true", help="列出可用的物理网络接口")
+    parser.add_argument("--status", metavar="INTERFACE", help="检查指定网络接口的WOL状态")
+    parser.add_argument("--enable", metavar="INTERFACE", help="为指定网络接口启用WOL")
+    parser.add_argument("--disable", metavar="INTERFACE", help="为指定网络接口禁用WOL")
+    parser.add_argument("--gui", action="store_true", help="启动图形用户界面 (如果textual可用)")
+    return parser.parse_args()
+
+def cli_main():
+    """命令行模式主函数"""
+    args = parse_arguments()
+
+    if args.gui:
+        if TEXTUAL_AVAILABLE:
+            print(f"{BLUE}正在启动图形界面...{RESET}")
+            app = WOLApp()
+            app.run()
+        else:
+            print(f"{RED}错误: textual库未安装，无法启动图形界面。{RESET}")
+            print(f"{YELLOW}请使用其他命令行参数或安装textual: pip install textual{RESET}")
+        return
+
+    if args.list_interfaces:
+        cli_list_interfaces()
+    elif args.status:
+        cli_check_wol_status(args.status)
+    elif args.enable:
+        cli_set_wol_status(args.enable, True)
+    elif args.disable:
+        cli_set_wol_status(args.disable, False)
+    else:
+        # 如果没有提供有效参数 (除了 --gui)
+        if len(sys.argv) == 1 or (len(sys.argv) == 2 and sys.argv[1] == "--gui" and not TEXTUAL_AVAILABLE) :
+             print(f"{YELLOW}未提供操作参数。使用 -h 或 --help 查看帮助。{RESET}")
+             if not TEXTUAL_AVAILABLE:
+                 print(f"{YELLOW}图形界面不可用 (textual 未安装)。{RESET}")
+        elif not TEXTUAL_AVAILABLE and not any([args.list_interfaces, args.status, args.enable, args.disable]):
+            # 如果textual不可用且没有其他有效参数
+            print(f"{YELLOW}未提供有效操作参数。使用 -h 或 --help 查看帮助。{RESET}")
+            print(f"{YELLOW}图形界面不可用 (textual 未安装)。{RESET}")
+
+# 以下是基于textual的GUI代码
+if TEXTUAL_AVAILABLE:
 # 确认对话框
 class ConfirmDialog(ModalScreen):
     """确认对话框"""
@@ -339,7 +503,7 @@ class WOLApp(App):
         super().__init__()
         self.interfaces = []
         self.selected_interface = None
-        self.wol_status = "未知"
+            self.wol_status_char = "未知" # 改为存储字符 g, d 等
     
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -350,7 +514,6 @@ class WOLApp(App):
             
             with Container(id="interface-container"):
                 yield Label("加载网络接口中...", id="interface-label")
-                # Select组件会在异步加载接口信息后添加
                 yield Select(id="interface-select", options=[("加载中...", "loading")], disabled=True)
             
             with Container(id="status-container"):
@@ -360,261 +523,162 @@ class WOLApp(App):
                 yield Button("启用 Wake-on-LAN", id="enable-wol", disabled=True)
                 yield Button("禁用 Wake-on-LAN", id="disable-wol", disabled=True)
             
-            # 状态输出
             yield Static("准备就绪，请选择网络接口。", id="status")
     
     def on_mount(self) -> None:
-        """组件挂载后执行，初始化状态"""
         self.load_interfaces()
     
     def action_refresh(self) -> None:
-        """刷新网络接口状态"""
         self.load_interfaces()
     
     def load_interfaces(self) -> None:
-        """加载网络接口列表"""
         status = self.query_one("#status")
         status.update("正在加载网络接口...")
-        
-        # 创建异步任务
         asyncio.create_task(self.do_load_interfaces())
     
     async def do_load_interfaces(self) -> None:
-        """异步加载网络接口列表"""
         interface_label = self.query_one("#interface-label")
         status = self.query_one("#status")
+            interface_select = self.query_one(Select) # 直接获取Select实例
         
-        # 获取网络接口列表
         self.interfaces = await asyncio.to_thread(get_network_interfaces)
         
-        # 打印调试信息
-        print(f"找到接口: {self.interfaces}")
-        
-        # 更新界面
         if not self.interfaces:
             interface_label.update("[red]未找到物理网口！[/red]")
-            # 更新已有的Select组件而不是移除再添加
-            interface_select = self.query_one("#interface-select")
-            interface_select.options = [("未找到网络接口", "none")]
-            interface_select.value = "none"  # 显式设置值
+                interface_select.set_options([("未找到网络接口", "none")])
+                interface_select.value = "none"
             interface_select.disabled = True
             self.query_one("#enable-wol").disabled = True
             self.query_one("#disable-wol").disabled = True
             status.update("[red]未找到可用的网络接口[/red]")
+                return
             
-            # 强制刷新界面
-            self.force_ui_refresh()
-            return
-        
-        # 构建接口选项
         options = [(f"{iface}", iface) for iface in self.interfaces]
-        print(f"创建选项: {options}")
-        
-        try:
-            # 清空Select组件并重新创建，避免更新问题
-            old_select = self.query_one("#interface-select")
-            old_select.remove()
+            interface_select.set_options(options) # 使用 set_options 更新选项
             
-            # 创建新的Select组件
-            new_select = Select(id="interface-select", options=options)
-            await self.mount(new_select, before="#status-container")
-            
-            # 设置初始值
             if options:
-                self.selected_interface = options[0][1]
-                new_select.value = self.selected_interface
-                print(f"设置初始值: {self.selected_interface}")
+                # 确保 Select 的 value 在 options 中
+                initial_interface = options[0][1]
+                interface_select.value = initial_interface # 这会自动触发 on_select_changed
+                self.selected_interface = initial_interface
+                await self.update_wol_status_display(initial_interface) # 手动调用一次以确保初始状态正确显示
             
             interface_label.update("[green]可用的网络接口：[/green]")
-            
-            # 强制刷新界面
-            self.force_ui_refresh()
-            
-            # 选择第一个接口并获取状态
-            if options:
-                await self.update_wol_status(self.selected_interface)
-            
+            interface_select.disabled = False
             status.update("网络接口加载完成")
-        except Exception as e:
-            # 处理可能的异常
-            print(f"更新界面时出错: {str(e)}")
-            status.update(f"[red]加载网络接口时出错: {str(e)}[/red]")
-    
-    def force_ui_refresh(self):
-        """强制刷新UI，不与Textual内部方法冲突"""
-        self.refresh_css()
-        try:
-            # 强制重绘屏幕
-            self.screen.refresh()
-        except:
-            pass
-    
-    async def update_wol_status(self, interface: str) -> None:
-        """更新WOL状态显示"""
-        if not interface:
+
+        async def update_wol_status_display(self, interface: str) -> None:
+            if not interface or interface == "none" or interface == "loading":
+                self.query_one("#wol-status").update("Wake-on-LAN 状态: 未选择接口")
+                self.query_one("#enable-wol").disabled = True
+                self.query_one("#disable-wol").disabled = True
             return
         
         wol_status_label = self.query_one("#wol-status")
-        status = self.query_one("#status")
+            status_widget = self.query_one("#status") # Renamed from 'status' to avoid conflict
         
-        status.update(f"正在检查 {interface} 的 Wake-on-LAN 状态...")
+            status_widget.update(f"正在检查 {interface} 的 Wake-on-LAN 状态...")
         
-        try:
-            # 获取WOL状态
-            self.wol_status = await asyncio.to_thread(check_wol_status, interface)
-            print(f"接口 {interface} 的WOL状态: '{self.wol_status}'")
+            self.wol_status_char = await asyncio.to_thread(check_wol_status, interface)
             
-            # 清理状态字符串，删除可能的额外空格
-            clean_status = self.wol_status.strip().lower()
-            
-            # 明确的状态检测逻辑
-            is_enabled = 'g' in clean_status
-            
-            # 检查状态是否明确是'd'或其他非g值(如'd'、'pumbg'等)
-            print(f"清理后的状态字符串: '{clean_status}'")
-            print(f"是否包含'g': {is_enabled}")
-            
-            # 更新界面
-            if is_enabled:
-                print("结论: WOL已启用")
-                wol_status_label.update(f"Wake-on-LAN 状态: [green]已启用[/green] ({self.wol_status})")
+            if self.wol_status_char == 'g':
+                wol_status_label.update(f"Wake-on-LAN 状态: [green]已启用 (g)[/green]")
                 self.query_one("#enable-wol").disabled = True
                 self.query_one("#disable-wol").disabled = False
-            else:
-                print("结论: WOL已禁用")
-                wol_status_label.update(f"Wake-on-LAN 状态: [red]已禁用[/red] ({self.wol_status})")
+            elif self.wol_status_char == 'd':
+                wol_status_label.update(f"Wake-on-LAN 状态: [red]已禁用 (d)[/red]")
                 self.query_one("#enable-wol").disabled = False
                 self.query_one("#disable-wol").disabled = True
-            
-            status.update(f"{interface} 的 Wake-on-LAN 状态已更新")
-        except Exception as e:
-            print(f"获取WOL状态时出错: {str(e)}")
-            wol_status_label.update(f"Wake-on-LAN 状态: [red]获取失败[/red]")
-            status.update(f"[red]获取 {interface} 的 Wake-on-LAN 状态失败: {str(e)}[/red]")
+            elif self.wol_status_char == "未知":
+                wol_status_label.update(f"Wake-on-LAN 状态: [yellow]未知[/yellow]")
+                self.query_one("#enable-wol").disabled = True # 或者 False，取决于是否允许尝试启用
+                self.query_one("#disable-wol").disabled = True
+            else: # p, u, m, b, a, s 等
+                wol_status_label.update(f"Wake-on-LAN 状态: [yellow]支持, 当前: {self.wol_status_char}[/yellow]")
+                self.query_one("#enable-wol").disabled = False # 允许启用
+                self.query_one("#disable-wol").disabled = False # 允许禁用 (变回 d)
+
+            status_widget.update(f"{interface} 的 Wake-on-LAN 状态已更新")
     
     def on_select_changed(self, event: Select.Changed) -> None:
-        """处理接口选择变更"""
-        # Textual 3.2.0中可能没有event.select属性，改用其他方法
-        # 只考虑界面上唯一的Select组件
-        self.selected_interface = event.value
-        if self.selected_interface and self.selected_interface != "none" and self.selected_interface != "loading":
-            # 创建一个异步任务来处理状态更新
-            asyncio.create_task(self.update_wol_status(self.selected_interface))
+            self.selected_interface = str(event.value) #确保是字符串
+            if self.selected_interface and self.selected_interface not in ["none", "loading"]:
+                asyncio.create_task(self.update_wol_status_display(self.selected_interface))
+            else: # 如果选择的是 "none" 或 "loading"
+                self.query_one("#wol-status").update("Wake-on-LAN 状态: 未选择接口")
+                self.query_one("#enable-wol").disabled = True
+                self.query_one("#disable-wol").disabled = True
     
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        """按钮点击事件处理"""
         button_id = event.button.id
+            
+            if not self.selected_interface or self.selected_interface in ["none", "loading"]:
+                self.query_one("#status").update("[red]请先选择一个有效的网络接口。[/red]")
+                return
         
         if button_id == "enable-wol":
-            # 不再使用确认对话框，直接执行
-            asyncio.create_task(self.do_set_wol(self.selected_interface, True))
+                asyncio.create_task(self.do_set_wol_gui(self.selected_interface, True))
         elif button_id == "disable-wol":
-            # 不再使用确认对话框，直接执行
-            asyncio.create_task(self.do_set_wol(self.selected_interface, False))
+                asyncio.create_task(self.do_set_wol_gui(self.selected_interface, False))
     
-    async def do_set_wol(self, interface: str, enable: bool) -> None:
-        """异步设置WOL状态"""
-        status = self.query_one("#status")
+        async def do_set_wol_gui(self, interface: str, enable: bool) -> None:
+            """异步设置WOL状态 (GUI版本)"""
+            status_widget = self.query_one("#status")
         mode = "g" if enable else "d"
         action_text = "启用" if enable else "禁用"
         
-        status.update(f"[blue]正在为 {interface} {action_text} Wake-on-LAN...[/blue]")
+            status_widget.update(f"[blue]正在为 {interface} {action_text} Wake-on-LAN...[/blue]")
         
-        # 设置WOL状态
-        cmd = f"ethtool -s {interface} wol {mode}"
-        result = await asyncio.to_thread(run_command, cmd, True)
-        if result['status_code'] != 0:
-            error_message = f"{action_text} Wake-on-LAN 失败！\n错误信息: {result['stderr']}"
-            status.update(f"[red]{error_message}[/red]")
-            return
-        
-        # 设置完成后直接更新界面状态，不等待实际状态检查
-        wol_status_label = self.query_one("#wol-status")
-        if enable:
-            wol_status_label.update(f"Wake-on-LAN 状态: [green]已启用[/green] (g)")
-            self.query_one("#enable-wol").disabled = True
-            self.query_one("#disable-wol").disabled = False
-        else:
-            wol_status_label.update(f"Wake-on-LAN 状态: [red]已禁用[/red] (d)")
-            self.query_one("#enable-wol").disabled = False
-            self.query_one("#disable-wol").disabled = True
-        
-        # 设置自动启动
-        cron_job = f"@reboot /sbin/ethtool -s {interface} wol g"
-
-        # 对于启用操作，添加crontab项
-        if enable:
-            # 自动方式添加到crontab
-            result = await asyncio.to_thread(run_command, "crontab -l", True)
-            cron_content = result['stdout'] if result['status_code'] == 0 else ""
-            
-            # 检查是否已存在
-            if cron_job not in cron_content:
-                # 添加到crontab
-                cmd = f'(crontab -l; echo "{cron_job}") | crontab -'
-                result = await asyncio.to_thread(run_command, cmd, True)
-                if result['status_code'] != 0:
-                    error_message = f"添加到crontab失败！\n错误信息: {result['stderr']}"
-                    status.update(f"[red]{error_message}[/red]")
-                    return
-        else:
-            # 从crontab移除
-            cmd = f"crontab -l | grep -v \"ethtool -s {interface} wol g\" | crontab -"
+            cmd = f"sudo ethtool -s {interface} wol {mode}"
             result = await asyncio.to_thread(run_command, cmd, True)
+
             if result['status_code'] != 0:
-                error_message = f"从crontab移除设置失败！\n错误信息: {result['stderr']}"
-                status.update(f"[red]{error_message}[/red]")
+                error_message = f"{action_text} Wake-on-LAN 失败！\n错误信息: {result['stderr']}"
+                status_widget.update(f"[red]{error_message}[/red]")
+                self.push_screen(ErrorDialog(error_message))
                 return
             
-            # 对于禁用操作，追加NetworkManager配置以防止设置被恢复
-            await self.prevent_wol_auto_restore(interface)
-        
-        # 更新状态信息，不显示成功对话框
-        status.update(f"已完成 {interface} 的 Wake-on-LAN {action_text}操作")
-        
-        # 延迟一段时间后再重新检查状态，以确保更改已生效
-        await asyncio.sleep(1)
-        await self.update_wol_status(interface)
-    
-    async def prevent_wol_auto_restore(self, interface: str) -> None:
-        """防止NetworkManager等自动恢复WOL设置"""
-        try:
-            # 检查NetworkManager是否存在
-            nm_check = await asyncio.to_thread(run_command, "which nmcli", shell=True)
-            if nm_check['status_code'] != 0:
-                print("未检测到NetworkManager，跳过配置")
-                return
+            # 更新界面按钮和状态显示
+            await self.update_wol_status_display(interface) # 这会根据新状态更新按钮
             
-            # 尝试创建NetworkManager配置文件
-            nm_dir = "/etc/NetworkManager/conf.d"
-            nm_file = f"{nm_dir}/90-disable-wol-{interface}.conf"
+            # 配置自启动 (crontab) 和 NetworkManager
+            cron_job_enable = f"@reboot /sbin/ethtool -s {interface} wol g"
             
-            # 确认目录存在
-            dir_check = await asyncio.to_thread(run_command, f"sudo mkdir -p {nm_dir}", shell=True)
-            if dir_check['status_code'] != 0:
-                print(f"创建目录 {nm_dir} 失败")
-                return
+            # 先移除旧的该接口的WOL crontab 条目
+            cron_remove_cmd = f"(crontab -l 2>/dev/null | grep -v \"ethtool -s {interface} wol \" ; echo \"\" ) | crontab -"
+            await asyncio.to_thread(run_command, cron_remove_cmd, shell=True)
+
+            if enable:
+                cron_add_cmd = f"(crontab -l 2>/dev/null; echo \"{cron_job_enable}\") | crontab -"
+                cron_result = await asyncio.to_thread(run_command, cron_add_cmd, shell=True)
+                if cron_result['status_code'] == 0:
+                    self.push_screen(SuccessDialog(f"已为接口 {interface} {action_text} WOL并设置开机自启。"))
+                else:
+                    self.push_screen(ErrorDialog(f"为接口 {interface} {action_text} WOL成功，但设置开机自启失败: {cron_result['stderr']}"))
+            else: # 禁用
+                # 确保NetworkManager不会恢复设置
+                nm_success = await asyncio.to_thread(cli_prevent_wol_auto_restore, interface) #复用CLI函数逻辑
+                if nm_success:
+                     self.push_screen(SuccessDialog(f"已为接口 {interface} {action_text} WOL，并已移除自启/配置NM。"))
+                else:
+                     self.push_screen(SuccessDialog(f"已为接口 {interface} {action_text} WOL，但NM配置可能未完全成功。"))
             
-            # 创建配置文件
-            config_content = f"""[device-{interface}]
-ethernet.wake-on-lan=0
-"""
-            
-            # 写入配置文件
-            write_cmd = f"echo '{config_content}' | sudo tee {nm_file}"
-            write_result = await asyncio.to_thread(run_command, write_cmd, shell=True)
-            if write_result['status_code'] != 0:
-                print(f"创建NetworkManager配置文件失败: {write_result['stderr']}")
-                return
-            
-            # 重启NetworkManager服务
-            restart_cmd = "sudo systemctl restart NetworkManager"
-            await asyncio.to_thread(run_command, restart_cmd, shell=True)
-            
-            print(f"已配置NetworkManager防止自动恢复WOL设置")
-        except Exception as e:
-            print(f"配置NetworkManager出错: {str(e)}")
+            status_widget.update(f"已完成 {interface} 的 Wake-on-LAN {action_text}操作")
+            # 再次刷新状态确保一致性
+            await asyncio.sleep(0.5) # 短暂等待 ethtool 生效
+            await self.update_wol_status_display(interface)
 
 if __name__ == "__main__":
+    # 检查是否有命令行参数或者textual是否不可用
+    # sys.argv[0] 是脚本名, 所以 len(sys.argv) > 1 表示有参数
+    if len(sys.argv) > 1 and sys.argv[1] != '--gui':
+        cli_main()
+    elif sys.argv[1:] == ['--gui'] and TEXTUAL_AVAILABLE: # 明确请求GUI且可用
+        app = WOLApp()
+        app.run()
+    elif not TEXTUAL_AVAILABLE: # Textual 不可用，强制CLI
+        # 如果没有其他参数，cli_main会打印帮助信息
+        cli_main()
+    else: # 默认情况：无参数且Textual可用，则启动GUI
     app = WOLApp()
     app.run() 

@@ -1,4 +1,13 @@
 #!/usr/bin/env python
+import os
+import subprocess
+import tempfile
+import sys
+import argparse
+
+# 尝试导入textual库，如果不存在则设置标志
+HAS_TEXTUAL = True
+try:
 from textual.app import App, ComposeResult
 from textual.widgets import (
     Header, Footer, Static, Button, 
@@ -6,10 +15,19 @@ from textual.widgets import (
 )
 from textual.containers import Container, Horizontal, Vertical
 from textual.screen import Screen, ModalScreen
-import os
-import subprocess
 import asyncio
-import tempfile
+except ImportError:
+    HAS_TEXTUAL = False
+    # 如果没有textual但尝试无参数运行，我们需要提示用户
+    if len(sys.argv) == 1:
+        print("错误: 未安装textual库，无法启动图形界面。")
+        print("您可以通过命令行参数使用此脚本的核心功能:")
+        print("  查看当前设置:  python Powermanagement.py -s")
+        print("  设置合盖动作:  python Powermanagement.py --lid [ignore|poweroff]")
+        print("  设置电源动作:  python Powermanagement.py --power [ignore|poweroff]")
+        print("  同时设置两项:  python Powermanagement.py --lid [ignore|poweroff] --power [ignore|poweroff]")
+        print("  查看帮助:      python Powermanagement.py -h")
+        sys.exit(1)
 
 # 定义颜色常量
 RESET = "\033[0m"
@@ -146,6 +164,115 @@ def restart_systemd_logind():
     """重启systemd-logind服务"""
     return run_as_root("systemctl restart systemd-logind")
 
+def cli_show_settings():
+    """显示当前电源管理设置"""
+    lid_switch, external_power = get_current_settings()
+    
+    print(f"当前电源管理设置:")
+    print(f"  笔记本合盖时: {'关机' if lid_switch == 'poweroff' else '不做任何反应'} ({lid_switch})")
+    print(f"  电源适配器移除时: {'关机' if external_power == 'poweroff' else '不做任何操作'} ({external_power})")
+    
+    return True
+
+def cli_apply_settings(lid_value=None, power_value=None):
+    """应用电源管理设置
+    
+    Args:
+        lid_value (str): 合盖动作设置 (ignore 或 poweroff)
+        power_value (str): 电源适配器移除动作设置 (ignore 或 poweroff)
+        
+    Returns:
+        bool: 是否成功应用设置
+    """
+    # 如果两个值都是None，则不做任何操作
+    if lid_value is None and power_value is None:
+        print("错误: 未指定任何设置，操作已取消")
+        return False
+    
+    # 读取当前设置
+    current_lid, current_power = get_current_settings()
+    
+    # 如果某个值为None，则使用当前设置
+    lid_value = lid_value if lid_value is not None else current_lid
+    power_value = power_value if power_value is not None else current_power
+    
+    print(f"准备应用以下设置:")
+    print(f"  笔记本合盖时: {'关机' if lid_value == 'poweroff' else '不做任何反应'} ({lid_value})")
+    print(f"  电源适配器移除时: {'关机' if power_value == 'poweroff' else '不做任何操作'} ({power_value})")
+    
+    # 确认操作
+    print("确认应用这些设置吗？(y/n)")
+    response = input().strip().lower()
+    if response != 'y':
+        print("操作已取消")
+        return False
+    
+    print("正在应用设置...")
+    
+    # 读取配置文件
+    lines = read_config_file()
+    print(f"读取配置文件: 找到 {len(lines)} 行内容")
+    
+    # 修改设置
+    lines = modify_lid_switch_setting(lines, lid_value)
+    lines = modify_external_power_setting(lines, power_value)
+    
+    # 写入配置文件
+    print("正在写入配置文件...")
+    success = write_config_file(lines)
+    
+    if not success:
+        print("错误: 写入配置文件失败")
+        return False
+    
+    print("配置文件已成功写入")
+    
+    # 验证配置更改
+    verify_result = verify_config_changes(lid_value, power_value)
+    
+    if not verify_result.get('success', False):
+        print("警告: 配置可能未正确应用")
+        if 'error' in verify_result:
+            print(f"错误详情: {verify_result['error']}")
+        else:
+            print(f"当前合盖设置: {verify_result.get('current_lid', '未知')}")
+            print(f"当前电源设置: {verify_result.get('current_power', '未知')}")
+    
+    # 重启服务
+    print("正在重启服务...")
+    result = restart_systemd_logind()
+    
+    if result['status_code'] != 0:
+        print(f"错误: 重启服务失败: {result['stderr']}")
+        return False
+    
+    print("服务已成功重启")
+    
+    # 再次验证配置
+    verify_result = verify_config_changes(lid_value, power_value)
+    
+    if verify_result.get('success', False):
+        print("设置已成功应用并重启服务！")
+        return True
+    else:
+        print("警告: 服务已重启，但配置可能未正确应用。请检查系统设置。")
+        return False
+
+def parse_arguments():
+    """解析命令行参数"""
+    parser = argparse.ArgumentParser(description='电源管理设置工具')
+    parser.add_argument('-s', '--show', action='store_true',
+                        help='显示当前电源管理设置')
+    parser.add_argument('--lid', choices=['ignore', 'poweroff'],
+                        help='设置笔记本合盖时的动作 (ignore: 不做任何反应, poweroff: 关机)')
+    parser.add_argument('--power', choices=['ignore', 'poweroff'],
+                        help='设置电源适配器移除时的动作 (ignore: 不做任何操作, poweroff: 关机)')
+    parser.add_argument('-f', '--force', action='store_true',
+                        help='强制执行，不需要确认')
+    return parser.parse_args()
+
+# 只有在导入了textual库的情况下才定义这些类
+if HAS_TEXTUAL:
 # 添加确认对话框
 class ConfirmDialog(ModalScreen):
     """确认对话框"""
@@ -323,13 +450,6 @@ class PowerManagementApp(App):
         align: center middle;
         width: 100%;
     }
-    
-    #warning-container {
-        width: 100%;
-        height: 100%;
-        padding: 2;
-        background: $surface;
-    }
     """
 
     BINDINGS = [
@@ -338,34 +458,26 @@ class PowerManagementApp(App):
     ]
 
     def compose(self) -> ComposeResult:
-        yield Header(show_clock=True)
-        yield Footer()
-        
-        # 直接在主应用中显示风险提示
-        with Container(id="warning-container"):
-            yield Label("[b]电源管理工具 - 风险提示[/b]", id="warning-title")
-            yield Label("[red]风险告知：由于此脚本中运行的指令涉及在root用户下才能运行，脚本会创建一个root终端执行相应命令并在执行完毕后自动关闭。由于root权限强大，为了保证数据安全，请您务必在执行前经过测试或数据备份再进行！对此出现的意外情况，作者不承担任何责任。[/red]", id="warning-text")
-            yield Label("[blue]此方法中不存在删除文件等其它敏感操作，您可以放心运行！[/blue]", id="safe-text")
-            
-            with Horizontal():
-                yield Button("继续", id="continue", variant="primary")
-                yield Button("退出", id="exit", variant="error")
+        # Header 和 Footer 由 PowerManagementScreen 提供
+        # 不再显示风险提示
+        yield from () 
     
     def on_mount(self) -> None:
         """应用挂载时执行"""
-        # 确保风险提示文本可见
-        self.query_one("#warning-text").styles.visibility = "visible"
-        self.query_one("#safe-text").styles.visibility = "visible"
+        # 直接显示主界面
+        self.push_screen(PowerManagementScreen())
     
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """按钮点击事件处理"""
-        if event.button.id == "continue":
-            # 隐藏风险提示
-            self.query_one("#warning-container").remove()
-            # 显示主界面
-            self.push_screen(PowerManagementScreen())
-        elif event.button.id == "exit":
-            self.exit()
+        # 由于风险提示已删除，此处的按钮逻辑不再需要
+        # if event.button.id == "continue":
+        #     # 隐藏风险提示
+        #     self.query_one("#warning-container").remove()
+        #     # 显示主界面
+        #     self.push_screen(PowerManagementScreen())
+        # elif event.button.id == "exit":
+        #     self.exit()
+        pass # 保留方法结构，但无操作
 
 # 电源管理主屏幕
 class PowerManagementScreen(Screen):
@@ -700,5 +812,28 @@ class PowerManagementScreen(Screen):
         self.app.push_screen(dialog)
 
 if __name__ == "__main__":
+    args = parse_arguments()
+    
+    # 如果指定了命令行参数，则直接执行相应功能
+    if args.show:
+        cli_show_settings()
+        sys.exit(0)
+    
+    if args.lid is not None or args.power is not None:
+        success = cli_apply_settings(args.lid, args.power)
+        sys.exit(0 if success else 1)
+    
+    # 如果没有指定命令行参数，则启动图形界面（如果textual可用）
+    if HAS_TEXTUAL:
     app = PowerManagementApp()
     app.run() 
+    else:
+        # 这种情况不应该发生，因为在导入时已经处理了，但为了代码完整性保留
+        print("错误: 未安装textual库，无法启动图形界面。")
+        print("您可以通过命令行参数使用此脚本的核心功能:")
+        print("  查看当前设置:  python Powermanagement.py -s")
+        print("  设置合盖动作:  python Powermanagement.py --lid [ignore|poweroff]")
+        print("  设置电源动作:  python Powermanagement.py --power [ignore|poweroff]")
+        print("  同时设置两项:  python Powermanagement.py --lid [ignore|poweroff] --power [ignore|poweroff]")
+        print("  查看帮助:      python Powermanagement.py -h")
+        sys.exit(1) 
