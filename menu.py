@@ -349,6 +349,23 @@ def ensure_scripts_are_present(force_update=False):
     target_branch = os.environ.get("FNSCRIPT_BRANCH", DEFAULT_GIT_BRANCH)
     print(f"{AnsiColors.CYAN}脚本库目标分支: {target_branch} (环境变量 FNSCRIPT_BRANCH, 默认 {DEFAULT_GIT_BRANCH}){AnsiColors.RESET}")
 
+    # 首先备份menu.py
+    menu_py_path = os.path.join(CURRENT_SCRIPT_DIR, "menu.py")
+    menu_py_backup_path = os.path.join(CURRENT_SCRIPT_DIR, "menu.py.backup")
+    menu_updated = False
+    
+    if os.path.exists(menu_py_path):
+        print(f"{AnsiColors.YELLOW}正在备份当前的menu.py文件...{AnsiColors.RESET}")
+        try:
+            shutil.copy2(menu_py_path, menu_py_backup_path)
+            print(f"{AnsiColors.GREEN}已备份menu.py到 {menu_py_backup_path}{AnsiColors.RESET}")
+        except Exception as e:
+            print(f"{AnsiColors.RED}备份menu.py失败: {e}{AnsiColors.RESET}")
+    
+    # 获取远程仓库的最新内容
+    print(f"{AnsiColors.CYAN}正在获取远程仓库最新内容...{AnsiColors.RESET}")
+    _run_git_command(["fetch", "origin"], "获取远程更新", cwd=CURRENT_SCRIPT_DIR)
+    
     parent_git_dir = os.path.join(CURRENT_SCRIPT_DIR, '.git')
     is_git_repo_in_parent = os.path.isdir(parent_git_dir)
     
@@ -418,12 +435,65 @@ def ensure_scripts_are_present(force_update=False):
     
     elif force_update: # Repo is good (not needs_fresh_sparse_init), and force_update is true
         print(f"{AnsiColors.CYAN}尝试更新 '{CURRENT_SCRIPT_DIR}' 中现有稀疏脚本库到分支 '{target_branch}'...{AnsiColors.RESET}")
-        if not _run_git_command(["fetch", "origin"], "获取远程更新", cwd=CURRENT_SCRIPT_DIR): return False
-        # Перед checkout убедимся что нет несохраненных изменений в TUISCRIPT_DIR которые могут помешать
-        # Для простоты предполагаем, что пользователь сам управляет этим, или мы можем добавить git reset --hard HEAD перед checkout
+        
+        # 尝试切换到目标分支
         if not _run_git_command(["checkout", target_branch], f"切换到分支 {target_branch}", cwd=CURRENT_SCRIPT_DIR): return False
-        if not _run_git_command(["pull", "origin", target_branch], f"拉取分支 {target_branch} 更新", cwd=CURRENT_SCRIPT_DIR): return False
+        
+        # 尝试拉取更新
+        pull_result = _run_git_command(["pull", "origin", target_branch], f"拉取分支 {target_branch} 更新", cwd=CURRENT_SCRIPT_DIR)
+        
+        # 如果拉取失败，尝试使用方法三：强制覆盖本地文件
+        if not pull_result:
+            print(f"{AnsiColors.YELLOW}检测到本地有冲突文件，正在使用方法三（强制覆盖本地文件）...{AnsiColors.RESET}")
+            if _run_git_command(["fetch", "origin"], "重新获取远程更新", cwd=CURRENT_SCRIPT_DIR) and \
+               _run_git_command(["reset", "--hard", f"origin/{target_branch}"], "强制重置到远程版本", cwd=CURRENT_SCRIPT_DIR):
+                print(f"{AnsiColors.GREEN}已成功强制更新到远程版本。{AnsiColors.RESET}")
+                print(f"{AnsiColors.YELLOW}本地修改已被远程版本覆盖。{AnsiColors.RESET}")
+                menu_updated = True
+            else:
+                print(f"{AnsiColors.RED}强制更新失败。{AnsiColors.RESET}")
+                return False
+        
         print(f"{AnsiColors.GREEN}稀疏脚本库已成功更新到分支 '{target_branch}'。{AnsiColors.RESET}")
+        
+        # 检查menu.py是否在更新过程中被移除
+        if not os.path.exists(menu_py_path) and os.path.exists(menu_py_backup_path):
+            print(f"{AnsiColors.YELLOW}检测到menu.py在更新过程中被移除，正在从备份恢复...{AnsiColors.RESET}")
+            try:
+                shutil.copy2(menu_py_backup_path, menu_py_path)
+                print(f"{AnsiColors.GREEN}已从备份恢复menu.py文件{AnsiColors.RESET}")
+                
+                # 更新稀疏检出配置，显式包含menu.py
+                sparse_checkout_file = os.path.join(parent_git_dir, "info", "sparse-checkout")
+                if os.path.exists(sparse_checkout_file):
+                    try:
+                        with open(sparse_checkout_file, 'r') as f:
+                            content = f.read()
+                        
+                        if "menu.py" not in content:
+                            with open(sparse_checkout_file, 'a') as f:
+                                f.write("\nmenu.py\n")
+                            print(f"{AnsiColors.GREEN}已更新稀疏检出配置，显式包含menu.py文件{AnsiColors.RESET}")
+                    except Exception as e:
+                        print(f"{AnsiColors.YELLOW}更新稀疏检出配置失败: {e}{AnsiColors.RESET}")
+            except Exception as e:
+                print(f"{AnsiColors.RED}从备份恢复menu.py失败: {e}{AnsiColors.RESET}")
+                print(f"{AnsiColors.RED}您可以手动复制 {menu_py_backup_path} 到 {menu_py_path}{AnsiColors.RESET}")
+        
+        # 更新结束后，删除备份文件
+        if os.path.exists(menu_py_backup_path):
+            try:
+                os.remove(menu_py_backup_path)
+                print(f"{AnsiColors.GREEN}已清理menu.py备份文件{AnsiColors.RESET}")
+            except Exception as e:
+                print(f"{AnsiColors.YELLOW}清理menu.py备份文件失败: {e}{AnsiColors.RESET}")
+        
+        # 如果menu.py被更新或恢复，提示用户重新运行
+        if menu_updated or not os.path.exists(menu_py_path) != os.path.exists(menu_py_backup_path):
+            print(f"\n{AnsiColors.GREEN}更新完成，请重新运行本脚本以应用最新版本。{AnsiColors.RESET}")
+            input(f"{AnsiColors.CYAN}按 Enter 键退出...{AnsiColors.RESET}")
+            sys.exit(0)  # 成功更新后退出程序
+        
         return True
     
     else: # Repo is good, not force_update - just check branch status
