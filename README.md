@@ -30,3 +30,4 @@ python3 此处替换脚本名称 -h #获取参数信息
 |  swapinfo.py      |  管理swap       |✅|✅|
 |  vmtoolses.py      |  安装虚拟机工具       |✅|✅|
 |  WOLstart.py      |  开启WOL网络唤醒       |✅|✅|
+|  network_diagnostic_tool.py      |  网络诊断与修改       |✅|✅|
