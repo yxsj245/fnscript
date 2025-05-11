@@ -1,3 +1,4 @@
+### 从 Python 3.11 开始，Debian/Ubuntu 等系统启用了 PEP 668，不允许你直接用 pip install 安装包到系统的 Python 目录中，防止破坏系统依赖
 在安装 `textual`的同时会把他所依赖的pip库进行升级，经过查询，此库依赖下面的库运行 \
 `importlib-metadata` `markdown-it-py` `rich` `typing-extensions` \
 这些库的安装不会影响系统。本人在没有安装textual库的设备进行依次查询每个库的版本发现部分库的版本信息可能在安装textual库后进行了升级。 
