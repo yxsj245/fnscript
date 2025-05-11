@@ -7,6 +7,7 @@ import sys
 import importlib.metadata
 import urllib.request
 import urllib.error
+import shutil # 新增导入
 
 # Platform-specific imports for single character input
 _IS_WINDOWS = os.name == 'nt'
@@ -56,6 +57,7 @@ MENU_CONFIG = {
         ("挂载物理CD/DVD", "cdmount.py"),
         ("qcow2转换工具", "qcowtools.py"),
         ("硬件压测", "self_inspection.py"),
+        ("影音万能格式转换", "ffmpeg_converter_tui.py"),
     ]
     # 您可以根据需要添加更多分类
 }
@@ -64,6 +66,8 @@ MENU_CONFIG = {
 SCRIPT_DIR_RELATIVE_TO_MENU = 'script'
 CURRENT_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 TUISCRIPT_DIR = os.path.join(CURRENT_SCRIPT_DIR, SCRIPT_DIR_RELATIVE_TO_MENU)
+GIT_REPO_URL = "https://gitee.com/xiao-zhu245/fnscript.git" # 新增Git仓库地址
+DEFAULT_GIT_BRANCH = "2.0" # 新增默认Git分支
 
 def check_and_install_textual():
     """Checks if textual 0.45.0 is installed and installs it if not."""
@@ -272,42 +276,190 @@ def display_footer(menu_width=70, is_submenu=False):
     print(AnsiColors.CYAN + AnsiColors.BOLD + "+" + "-" * menu_width + "+" + AnsiColors.RESET)
     # print() # Removed extra blank line from here, will add before prompt if needed
 
+def _run_git_command(command_args, operation_name, cwd):
+    """Helper to run a Git command and handle common errors. cwd is now mandatory."""
+    try:
+        print(f"{AnsiColors.CYAN}正在执行: git {' '.join(command_args)} (在目录: {cwd}){AnsiColors.RESET}")
+        process = subprocess.run(["git"] + command_args, check=True, capture_output=True, text=True, cwd=cwd)
+        
+        if process.stdout:
+            print(f"{AnsiColors.GREEN}Git {operation_name} 输出:\n{process.stdout.strip()}{AnsiColors.RESET}")
+        if process.stderr:
+            stderr_output = process.stderr.strip()
+            # Git pull 成功但无更改时，信息可能在 stderr, 或者一些警告
+            # "Already up to date." 或法语/德语等其他语言的类似表达
+            if any(phrase in stderr_output.lower() for phrase in ["already up to date", "déjà à jour", "bereits aktuell"]):
+                print(f"{AnsiColors.GREEN}Git {operation_name}: {stderr_output}{AnsiColors.RESET}")
+            elif stderr_output: # 任何其他 stderr 输出都视为警告或注意信息
+                print(f"{AnsiColors.YELLOW}Git {operation_name} 注意信息:\n{stderr_output}{AnsiColors.RESET}")
+        
+        if not process.stdout and not (process.stderr and any(phrase in process.stderr.strip().lower() for phrase in ["already up to date", "déjà à jour", "bereits aktuell"])) and process.stderr.strip() != "":
+             # 如果 stdout 为空，stderr 不为空且不是 'already up to date' 等信息，则可能表明某些操作虽未报错但未按预期进行
+             pass # 允许继续，但上面已经打印了stderr作为YELLOW信息
+        elif not process.stdout and not process.stderr.strip():
+            print(f"{AnsiColors.GREEN}Git {operation_name} 执行完成，无输出。{AnsiColors.RESET}")
+
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"{AnsiColors.RED}Git {operation_name} 失败。返回码: {e.returncode}{AnsiColors.RESET}")
+        if e.stdout: print(f"{AnsiColors.RED}标准输出:\n{e.stdout.strip()}{AnsiColors.RESET}")
+        if e.stderr: print(f"{AnsiColors.RED}标准错误:\n{e.stderr.strip()}{AnsiColors.RESET}")
+        return False
+    except FileNotFoundError:
+        print(f"{AnsiColors.RED}错误: Git 命令未找到。请确保 Git 已正确安装并配置在系统路径中。{AnsiColors.RESET}")
+        return False
+    except Exception as e:
+        print(f"{AnsiColors.RED}执行 Git {operation_name} 时发生未知错误: {e}{AnsiColors.RESET}")
+        return False
+
+def _prepare_repo_for_sparse_init():
+    """Deletes the target script directory (TUISCRIPT_DIR) and any existing .git directory in CURRENT_SCRIPT_DIR."""
+    target_script_actual_dir = TUISCRIPT_DIR
+    parent_git_dir = os.path.join(CURRENT_SCRIPT_DIR, '.git')
+    cleanup_ok = True
+
+    print(f"{AnsiColors.YELLOW}准备清理环境以进行新的稀疏初始化...{AnsiColors.RESET}")
+
+    if os.path.exists(target_script_actual_dir):
+        print(f"{AnsiColors.CYAN}正在删除目标脚本目录: {target_script_actual_dir}{AnsiColors.RESET}")
+        try:
+            shutil.rmtree(target_script_actual_dir)
+            print(f"{AnsiColors.GREEN}已删除目录: {target_script_actual_dir}{AnsiColors.RESET}")
+        except OSError as e:
+            print(f"{AnsiColors.RED}删除目录 '{target_script_actual_dir}' 失败: {e}{AnsiColors.RESET}")
+            cleanup_ok = False
+    
+    if os.path.exists(parent_git_dir):
+        print(f"{AnsiColors.CYAN}正在删除父目录中的 .git 目录: {parent_git_dir}{AnsiColors.RESET}")
+        try:
+            shutil.rmtree(parent_git_dir)
+            print(f"{AnsiColors.GREEN}已删除目录: {parent_git_dir}{AnsiColors.RESET}")
+        except OSError as e:
+            print(f"{AnsiColors.RED}删除目录 '{parent_git_dir}' 失败: {e}{AnsiColors.RESET}")
+            cleanup_ok = False
+    
+    if cleanup_ok:
+        print(f"{AnsiColors.GREEN}环境清理完成。{AnsiColors.RESET}")
+    else:
+        print(f"{AnsiColors.RED}环境清理过程中发生错误。{AnsiColors.RESET}")
+    return cleanup_ok
+
+def ensure_scripts_are_present(force_update=False):
+    """Ensures TUISCRIPT_DIR is populated by a sparse checkout of the remote 'script/' folder, with .git in CURRENT_SCRIPT_DIR."""
+    target_branch = os.environ.get("FNSCRIPT_BRANCH", DEFAULT_GIT_BRANCH)
+    print(f"{AnsiColors.CYAN}脚本库目标分支: {target_branch} (环境变量 FNSCRIPT_BRANCH, 默认 {DEFAULT_GIT_BRANCH}){AnsiColors.RESET}")
+
+    parent_git_dir = os.path.join(CURRENT_SCRIPT_DIR, '.git')
+    is_git_repo_in_parent = os.path.isdir(parent_git_dir)
+    
+    needs_fresh_sparse_init = False
+    is_correctly_configured_sparse = False
+
+    if is_git_repo_in_parent:
+        sparse_checkout_file_path = os.path.join(parent_git_dir, "info", "sparse-checkout")
+        expected_config_line = SCRIPT_DIR_RELATIVE_TO_MENU + "/" 
+        
+        if os.path.isfile(sparse_checkout_file_path):
+            try:
+                with open(sparse_checkout_file_path, 'r') as f_sparse:
+                    found_expected_line = False
+                    for line in f_sparse:
+                        if line.strip() == expected_config_line:
+                            found_expected_line = True
+                            break
+                    if found_expected_line:
+                        is_correctly_configured_sparse = True
+                    else:
+                        print(f"{AnsiColors.YELLOW}稀疏检出配置文件 '{sparse_checkout_file_path}' 内容 ('{line.strip() if 'line' in locals() else ''}') 与期望 ('{expected_config_line}') 不符。{AnsiColors.RESET}")
+            except IOError as e_sparse_io:
+                 print(f"{AnsiColors.YELLOW}无法读取稀疏检出配置文件 '{sparse_checkout_file_path}': {e_sparse_io}。假定配置不正确。{AnsiColors.RESET}")
+        else:
+            print(f"{AnsiColors.YELLOW}未找到稀疏检出配置文件 '{sparse_checkout_file_path}'。{AnsiColors.RESET}")
+        
+        if not is_correctly_configured_sparse:
+            print(f"{AnsiColors.YELLOW}'{CURRENT_SCRIPT_DIR}' 中的 .git 仓库未正确配置为仅拉取远程 '{SCRIPT_DIR_RELATIVE_TO_MENU}/' 子目录。{AnsiColors.RESET}")
+            needs_fresh_sparse_init = True
+    else:
+        print(f"{AnsiColors.YELLOW}在 '{CURRENT_SCRIPT_DIR}' 中未找到 .git 仓库。{AnsiColors.RESET}")
+        needs_fresh_sparse_init = True
+
+    # Determine action based on flags and current state
+    if needs_fresh_sparse_init:
+        print(f"{AnsiColors.CYAN}需要执行全新的稀疏初始化。{AnsiColors.RESET}")
+        if not _prepare_repo_for_sparse_init(): 
+            print(f"{AnsiColors.RED}环境清理失败，无法继续初始化。{AnsiColors.RESET}")
+            return False
+        
+        print(f"{AnsiColors.CYAN}正在 '{CURRENT_SCRIPT_DIR}' 中初始化新的稀疏Git仓库并配置拉取远程 '{SCRIPT_DIR_RELATIVE_TO_MENU}/' ...{AnsiColors.RESET}")
+        if not _run_git_command(["init"], "初始化仓库", cwd=CURRENT_SCRIPT_DIR): return False
+        if not _run_git_command(["remote", "add", "origin", GIT_REPO_URL], "添加远程仓库", cwd=CURRENT_SCRIPT_DIR): return False
+        if not _run_git_command(["config", "core.sparseCheckout", "true"], "启用稀疏检出", cwd=CURRENT_SCRIPT_DIR): return False
+        
+        sparse_checkout_config_file_to_write = os.path.join(CURRENT_SCRIPT_DIR, ".git", "info", "sparse-checkout")
+        try:
+            with open(sparse_checkout_config_file_to_write, 'w') as f_write_sparse:
+                f_write_sparse.write(SCRIPT_DIR_RELATIVE_TO_MENU + "/\n") 
+            print(f"{AnsiColors.GREEN}已配置稀疏检出以仅拉取远程 '{SCRIPT_DIR_RELATIVE_TO_MENU}/' 目录。{AnsiColors.RESET}")
+        except IOError as e_write_sparse_io:
+            print(f"{AnsiColors.RED}写入稀疏检出配置文件 '{sparse_checkout_config_file_to_write}' 失败: {e_write_sparse_io}{AnsiColors.RESET}")
+            return False
+
+        print(f"{AnsiColors.CYAN}正在从分支 '{target_branch}' 的远程 '{SCRIPT_DIR_RELATIVE_TO_MENU}/' 子目录拉取文件...{AnsiColors.RESET}")
+        pull_command = ["pull", "origin", target_branch]
+        # pull_command = ["pull", "--depth=1", "origin", target_branch] # Consider shallow clone
+        if not _run_git_command(pull_command, f"稀疏拉取分支 {target_branch}", cwd=CURRENT_SCRIPT_DIR):
+        #    print(f"{AnsiColors.YELLOW}浅层稀疏拉取失败，尝试完整稀疏拉取分支 '{target_branch}'...{AnsiColors.RESET}")
+        #    if not _run_git_command(["pull", "origin", target_branch], f"稀疏拉取分支 {target_branch} (完整)", cwd=CURRENT_SCRIPT_DIR):
+            print(f"{AnsiColors.RED}拉取远程分支 '{target_branch}' 的稀疏内容失败。{AnsiColors.RESET}")
+            return False
+        
+        print(f"{AnsiColors.GREEN}已成功从远程仓库的 '{SCRIPT_DIR_RELATIVE_TO_MENU}/' 目录拉取文件到本地 '{TUISCRIPT_DIR}'。{AnsiColors.RESET}")
+        return True
+    
+    elif force_update: # Repo is good (not needs_fresh_sparse_init), and force_update is true
+        print(f"{AnsiColors.CYAN}尝试更新 '{CURRENT_SCRIPT_DIR}' 中现有稀疏脚本库到分支 '{target_branch}'...{AnsiColors.RESET}")
+        if not _run_git_command(["fetch", "origin"], "获取远程更新", cwd=CURRENT_SCRIPT_DIR): return False
+        # Перед checkout убедимся что нет несохраненных изменений в TUISCRIPT_DIR которые могут помешать
+        # Для простоты предполагаем, что пользователь сам управляет этим, или мы можем добавить git reset --hard HEAD перед checkout
+        if not _run_git_command(["checkout", target_branch], f"切换到分支 {target_branch}", cwd=CURRENT_SCRIPT_DIR): return False
+        if not _run_git_command(["pull", "origin", target_branch], f"拉取分支 {target_branch} 更新", cwd=CURRENT_SCRIPT_DIR): return False
+        print(f"{AnsiColors.GREEN}稀疏脚本库已成功更新到分支 '{target_branch}'。{AnsiColors.RESET}")
+        return True
+    
+    else: # Repo is good, not force_update - just check branch status
+        print(f"{AnsiColors.GREEN}'{CURRENT_SCRIPT_DIR}' 中的 .git 仓库已正确配置稀疏检出。{AnsiColors.RESET}")
+        try:
+            process_check_branch = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                capture_output=True, text=True, check=True, cwd=CURRENT_SCRIPT_DIR
+            )
+            current_branch = process_check_branch.stdout.strip()
+            if current_branch != target_branch:
+                print(f"{AnsiColors.YELLOW}提示: 当前稀疏脚本库位于分支 '{current_branch}'，但配置的目标分支为 '{target_branch}'。{AnsiColors.RESET}")
+                print(f"{AnsiColors.YELLOW}如需切换到分支 '{target_branch}' 并获取更新，请在主菜单选择 'U' 更新选项。{AnsiColors.RESET}")
+            else:
+                print(f"{AnsiColors.GREEN}稀疏脚本库当前位于分支 '{current_branch}' (与目标一致)。{AnsiColors.RESET}")
+        except subprocess.CalledProcessError as e_branch_check:
+            print(f"{AnsiColors.YELLOW}警告: 无法检查稀疏脚本库的当前分支: {e_branch_check.stderr.strip() if e_branch_check.stderr else 'Unknown error'}{AnsiColors.RESET}")
+        except FileNotFoundError:
+            print(f"{AnsiColors.RED}错误: Git 命令未找到，无法检查当前分支。{AnsiColors.RESET}")
+        return True
+
 def run_script(script_name, script_actual_filename, script_dir):
+    print(f"{AnsiColors.CYAN}执行脚本 '{script_name}' 前检查脚本库状态...{AnsiColors.RESET}")
+    if not ensure_scripts_are_present(force_update=False):
+        print(f"{AnsiColors.RED}脚本库准备失败。无法执行脚本 '{script_name}'。{AnsiColors.RESET}")
+        input(f"\n{AnsiColors.CYAN}按 Enter 键返回菜单...{AnsiColors.RESET}")
+        return
+
     script_path = os.path.join(script_dir, script_actual_filename)
     
     if not os.path.isfile(script_path):
-        print(f"{AnsiColors.YELLOW}脚本 '{script_actual_filename}' 在本地目录 '{script_dir}' 未找到。{AnsiColors.RESET}")
-        base_url = "http://blogpage.xiaozhuhouses.asia/api/fnscript_tui/"
-        download_url = base_url + script_actual_filename
-        print(f"{AnsiColors.CYAN}正在尝试从 {download_url} 下载...{AnsiColors.RESET}")
-        
-        # 确保 script_dir 存在
-        if not os.path.exists(script_dir):
-            try:
-                os.makedirs(script_dir, exist_ok=True) # exist_ok=True 避免并发问题
-                print(f"{AnsiColors.GREEN}已创建脚本目录: {script_dir}{AnsiColors.RESET}")
-            except OSError as e:
-                print(f"{AnsiColors.RED}创建脚本目录 {script_dir} 失败: {e}{AnsiColors.RESET}")
-                input(f"\n{AnsiColors.CYAN}按 Enter 键返回菜单...{AnsiColors.RESET}")
-                return
-
-        try:
-            urllib.request.urlretrieve(download_url, script_path)
-            print(f"{AnsiColors.GREEN}脚本 '{script_actual_filename}' 下载成功。{AnsiColors.RESET}")
-        except urllib.error.HTTPError as e:
-            print(f"{AnsiColors.RED}下载脚本 '{script_actual_filename}' 失败 (HTTP Error {e.code}): {e.reason}{AnsiColors.RESET}")
-            print(f"{AnsiColors.YELLOW}请检查文件名是否正确或服务器上是否存在该文件。{AnsiColors.RESET}")
-            input(f"\n{AnsiColors.CYAN}按 Enter 键返回菜单...{AnsiColors.RESET}")
-            return 
-        except urllib.error.URLError as e:
-            print(f"{AnsiColors.RED}下载脚本 '{script_actual_filename}' 失败 (URL Error): {e.reason}{AnsiColors.RESET}")
-            print(f"{AnsiColors.YELLOW}请检查网络连接或URL。{AnsiColors.RESET}")
-            input(f"\n{AnsiColors.CYAN}按 Enter 键返回菜单...{AnsiColors.RESET}")
-            return
-        except Exception as e:
-            print(f"{AnsiColors.RED}下载脚本 '{script_actual_filename}' 时发生未知错误: {e}{AnsiColors.RESET}")
-            input(f"\n{AnsiColors.CYAN}按 Enter 键返回菜单...{AnsiColors.RESET}")
-            return
+        print(f"{AnsiColors.RED}错误: 脚本文件 '{script_actual_filename}' 在 '{script_dir}' 中未找到。{AnsiColors.RESET}")
+        print(f"{AnsiColors.YELLOW}这可能意味着该脚本不存在于远程仓库中，或者MENU_CONFIG配置有误。{AnsiColors.RESET}")
+        print(f"{AnsiColors.YELLOW}请尝试从主菜单更新脚本库，如果问题依旧，请检查脚本名和配置。{AnsiColors.RESET}")
+        input(f"\n{AnsiColors.CYAN}按 Enter 键返回菜单...{AnsiColors.RESET}")
+        return
     
     # 执行脚本
     clear_screen()
@@ -380,13 +532,25 @@ def main():
             print(f"\n{AnsiColors.CYAN}{power_by_text}{AnsiColors.RESET}") # 主菜单Power by靠左显示
             print() # Blank line before prompt
 
-            print(f"{AnsiColors.MAGENTA}{AnsiColors.BOLD}请按键选择分类 (数字) 或 ESC 退出： {AnsiColors.RESET}", end='', flush=True)
+            print(f"{AnsiColors.MAGENTA}{AnsiColors.BOLD}请按键选择分类 (数字), U 更新脚本, 或 ESC 退出： {AnsiColors.RESET}", end='', flush=True)
             choice_char = get_single_char_from_terminal()
 
             if choice_char == '\x1b': # ESC
                 clear_screen()
                 print(f"{AnsiColors.GREEN}感谢使用，再见！{AnsiColors.RESET}")
                 break
+            
+            if choice_char.upper() == 'U':
+                clear_screen()
+                display_fnscript_art()
+                display_header("飞牛脚本启动器 - 更新脚本库")
+                print(f"{AnsiColors.CYAN}正在检查并更新脚本库...{AnsiColors.RESET}")
+                if ensure_scripts_are_present(force_update=True):
+                    print(f"\n{AnsiColors.GREEN}脚本库更新处理完成。{AnsiColors.RESET}")
+                else:
+                    print(f"\n{AnsiColors.RED}脚本库更新失败。请检查网络连接和Git是否正确安装及配置。{AnsiColors.RESET}")
+                input(f"{AnsiColors.CYAN}按 Enter 键返回主菜单...{AnsiColors.RESET}")
+                continue
             
             try:
                 choice_num = int(choice_char)
@@ -459,12 +623,17 @@ if __name__ == "__main__":
         input(f"{AnsiColors.RED}Textual 依赖项处理失败，按 Enter 键退出...{AnsiColors.RESET}")
         sys.exit(1) # 如果安装失败，退出程序
 
-    if not os.path.isdir(TUISCRIPT_DIR):
+    print(f"{AnsiColors.CYAN}正在初始化并检查脚本库...{AnsiColors.RESET}")
+    if not ensure_scripts_are_present(force_update=False): # Initial check/clone
         clear_screen()
-        # display_fnscript_art() # Optionally show art on dir error too
-        display_header("飞牛脚本启动器 - 错误")
-        print(f"{AnsiColors.RED}{AnsiColors.BOLD}错误：脚本目录 '{TUISCRIPT_DIR}' 未找到。{AnsiColors.RESET}")
-        print(f"{AnsiColors.YELLOW}请确保在 'menu.py' 文件同级目录下存在名为 'TUIscript' 的文件夹，并且其中包含您的脚本。{AnsiColors.RESET}")
+        # display_fnscript_art() # 可以在错误时显示
+        display_header("飞牛脚本启动器 - 初始化错误")
+        print(f"{AnsiColors.RED}{AnsiColors.BOLD}错误：无法初始化脚本库。{AnsiColors.RESET}")
+        print(f"{AnsiColors.YELLOW}尝试从 '{GIT_REPO_URL}' 克隆脚本。{AnsiColors.RESET}")
+        print(f"{AnsiColors.YELLOW}请检查您的网络连接以及Git是否已正确安装并配置在系统路径中。{AnsiColors.RESET}")
         input(f"{AnsiColors.CYAN}按 Enter 键退出...{AnsiColors.RESET}")
+        sys.exit(1)
     else:
+        print(f"{AnsiColors.GREEN}脚本库准备就绪。{AnsiColors.RESET}")
+        # time.sleep(1) # 可选的短暂暂停
         main()
