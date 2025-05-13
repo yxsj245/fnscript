@@ -51,6 +51,9 @@ MENU_CONFIG = {
         ("开启WOL网络唤醒", "WOLstart.py"),
         ("网络诊断与修改", "network_diagnostic_tool.py"),
     ],
+    "磁盘设置": [
+        ("阵列状态和修复", "raid_repair_tui.py"),
+    ],
     "工具": [
         ("分析目录文件大小", "filestorage.py"),
         ("安装虚拟机工具", "vmtoolses.py"),
