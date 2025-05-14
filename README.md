@@ -44,3 +44,6 @@ python3 此处替换脚本名称 -h #获取参数信息
 |  network_diagnostic_tool.py      |  网络诊断与修改       |✅|✅|
 |  raid_repair_tui.py      |  阵列状态和修复       |✅|❎|
 |  ffmpeg_converter_tui.py      |  影音万能格式转换       |✅|❎|
+
+# 其它合作脚本
+[七月七夕纯命令行传统脚本](https://github.com/qiyueqixi/fnos)
