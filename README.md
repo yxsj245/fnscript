@@ -4,6 +4,9 @@
 ![image](https://github.com/user-attachments/assets/66b43e51-0eb5-41b8-8770-6484e953afda)
 ### 🖱TUI交互式界面，感觉就像在使用Windows
 ![output](https://github.com/user-attachments/assets/f0a63758-8174-408d-94a0-bbe637bd1bd2)
+### 终端绑定功能，进入root自动运行脚本
+![output](https://github.com/user-attachments/assets/f330ba45-3a7d-4bbf-bd0a-84530d0e1663)
+
 ### ⬇git下载和更新
 ✅ 操作简单，维护更新方便，采用Gitee国内源，确保全国地区均可访问
 ### 📄独立脚本文件
