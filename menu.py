@@ -71,7 +71,7 @@ SCRIPT_DIR_RELATIVE_TO_MENU = 'script'
 CURRENT_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 TUISCRIPT_DIR = os.path.join(CURRENT_SCRIPT_DIR, SCRIPT_DIR_RELATIVE_TO_MENU)
 GIT_REPO_URL = "https://gitee.com/xiao-zhu245/fnscript.git" # 新增Git仓库地址
-DEFAULT_GIT_BRANCH = "2.0" # 新增默认Git分支
+DEFAULT_GIT_BRANCH = "main" # 新增默认Git分支
 
 def check_and_install_textual():
     """Checks if textual 0.45.0 is installed and installs it if not."""
