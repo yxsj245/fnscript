@@ -8,6 +8,7 @@ import importlib.metadata
 import urllib.request
 import urllib.error
 import shutil # 新增导入
+import argparse # 用于处理命令行参数
 
 # Platform-specific imports for single character input
 _IS_WINDOWS = os.name == 'nt'
@@ -556,7 +557,168 @@ def run_script(script_name, script_actual_filename, script_dir):
              termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, original_stdin_settings)
     input(f"\n{AnsiColors.CYAN}按 Enter 键返回菜单...{AnsiColors.RESET}")
 
+def bind_to_root_login():
+    """将脚本绑定到root登录时自动运行（执行sudo -i时自动启动）"""
+    if _IS_WINDOWS:
+        print(f"{AnsiColors.RED}此功能仅支持Linux系统。{AnsiColors.RESET}")
+        return False
+    
+    # 以下代码仅在Linux/Unix系统执行
+    # 获取当前脚本的绝对路径
+    current_script_path = os.path.abspath(__file__)
+    
+    # 检查是否已经是root用户
+    try:
+        is_root = os.geteuid() == 0
+    except AttributeError:
+        # 如果在某些Unix系统上没有geteuid函数
+        print(f"{AnsiColors.RED}无法确定当前用户权限，可能不支持此功能。{AnsiColors.RESET}")
+        return False
+    
+    if not is_root:
+        print(f"{AnsiColors.YELLOW}您需要具有root权限才能设置登录绑定。{AnsiColors.RESET}")
+        print(f"{AnsiColors.YELLOW}正在尝试通过sudo请求权限...{AnsiColors.RESET}")
+        try:
+            cmd = ["sudo", sys.executable, current_script_path, "--bind"]
+            subprocess.run(cmd, check=True)
+            return True
+        except subprocess.CalledProcessError as e:
+            print(f"{AnsiColors.RED}sudo请求失败: {e}{AnsiColors.RESET}")
+            return False
+    
+    # 现在我们以root身份运行，执行绑定操作
+    try:
+        # 确定bashrc文件位置
+        bashrc_path = "/root/.bashrc"
+        
+        # 要添加的内容
+        menu_command = f"python3 {current_script_path}"
+        marker_start = "# FNSCRIPT-AUTO-START BEGIN"
+        marker_end = "# FNSCRIPT-AUTO-START END"
+        
+        # 检查是否已经存在
+        if os.path.exists(bashrc_path):
+            with open(bashrc_path, 'r') as f:
+                content = f.read()
+                if marker_start in content:
+                    print(f"{AnsiColors.YELLOW}脚本已经绑定到root登录。{AnsiColors.RESET}")
+                    return True
+        
+        # 添加到.bashrc
+        with open(bashrc_path, 'a') as f:
+            f.write(f"\n{marker_start}\n")
+            f.write(f"# 以下命令将在root登录时自动运行飞牛脚本\n")
+            f.write(f"{menu_command}\n")
+            f.write(f"{marker_end}\n")
+        
+        print(f"{AnsiColors.GREEN}成功将脚本绑定到root登录！{AnsiColors.RESET}")
+        print(f"{AnsiColors.GREEN}当您执行 sudo -i 进入root模式时，本脚本将自动启动。{AnsiColors.RESET}")
+        return True
+    except Exception as e:
+        print(f"{AnsiColors.RED}绑定脚本到root登录时出错: {e}{AnsiColors.RESET}")
+        return False
+
+def unbind_from_root_login():
+    """解除脚本与root登录的绑定"""
+    if _IS_WINDOWS:
+        print(f"{AnsiColors.RED}此功能仅支持Linux系统。{AnsiColors.RESET}")
+        return False
+    
+    # 以下代码仅在Linux/Unix系统执行
+    # 检查是否已经是root用户
+    try:
+        is_root = os.geteuid() == 0
+    except AttributeError:
+        # 如果在某些Unix系统上没有geteuid函数
+        print(f"{AnsiColors.RED}无法确定当前用户权限，可能不支持此功能。{AnsiColors.RESET}")
+        return False
+    
+    if not is_root:
+        print(f"{AnsiColors.YELLOW}您需要具有root权限才能解除登录绑定。{AnsiColors.RESET}")
+        print(f"{AnsiColors.YELLOW}正在尝试通过sudo请求权限...{AnsiColors.RESET}")
+        try:
+            current_script_path = os.path.abspath(__file__)
+            cmd = ["sudo", sys.executable, current_script_path, "--unbind"]
+            subprocess.run(cmd, check=True)
+            return True
+        except subprocess.CalledProcessError as e:
+            print(f"{AnsiColors.RED}sudo请求失败: {e}{AnsiColors.RESET}")
+            return False
+    
+    # 现在我们以root身份运行，执行解绑操作
+    try:
+        # 确定bashrc文件位置
+        bashrc_path = "/root/.bashrc"
+        
+        # 要查找和删除的标记
+        marker_start = "# FNSCRIPT-AUTO-START BEGIN"
+        marker_end = "# FNSCRIPT-AUTO-START END"
+        
+        # 检查文件是否存在
+        if not os.path.exists(bashrc_path):
+            print(f"{AnsiColors.YELLOW}.bashrc文件不存在，无需解绑。{AnsiColors.RESET}")
+            return True
+        
+        # 读取原始内容
+        with open(bashrc_path, 'r') as f:
+            lines = f.readlines()
+        
+        # 寻找标记并删除标记内的内容
+        new_lines = []
+        skip_mode = False
+        found = False
+        
+        for line in lines:
+            if marker_start in line:
+                skip_mode = True
+                found = True
+                continue
+            if marker_end in line:
+                skip_mode = False
+                continue
+            if not skip_mode:
+                new_lines.append(line)
+        
+        # 如果找到标记，则重写文件
+        if found:
+            with open(bashrc_path, 'w') as f:
+                f.writelines(new_lines)
+            print(f"{AnsiColors.GREEN}成功解除脚本与root登录的绑定！{AnsiColors.RESET}")
+        else:
+            print(f"{AnsiColors.YELLOW}未找到绑定标记，无需解绑。{AnsiColors.RESET}")
+        
+        return True
+    except Exception as e:
+        print(f"{AnsiColors.RED}解除绑定时出错: {e}{AnsiColors.RESET}")
+        return False
+
 def main():
+    # 处理命令行参数
+    parser = argparse.ArgumentParser(description='飞牛脚本启动器')
+    parser.add_argument('--bind', action='store_true', help='将脚本绑定到root登录时自动运行')
+    parser.add_argument('--unbind', action='store_true', help='解除脚本与root登录的绑定')
+    args = parser.parse_args()
+    
+    # 处理绑定参数
+    if args.bind:
+        if _IS_WINDOWS:
+            print(f"{AnsiColors.RED}绑定功能仅支持Linux系统。{AnsiColors.RESET}")
+            sys.exit(1)
+        if bind_to_root_login():
+            return
+        else:
+            sys.exit(1)
+    
+    # 处理解绑参数
+    if args.unbind:
+        if _IS_WINDOWS:
+            print(f"{AnsiColors.RED}解绑功能仅支持Linux系统。{AnsiColors.RESET}")
+            sys.exit(1)
+        if unbind_from_root_login():
+            return
+        else:
+            sys.exit(1)
+    
     global MENU_CONFIG
     
     # Initial validation removed. Script existence will be checked at runtime by run_script.
@@ -592,20 +754,46 @@ def main():
             display_fnscript_art() # Display art at the top of the main menu
             display_header("飞牛脚本启动器 - 主菜单")
             display_menu_items(categories, item_color=AnsiColors.MAGENTA)
+            
+            # 在菜单底部添加系统管理选项
+            print(AnsiColors.CYAN + AnsiColors.BOLD + "+" + "-" * 70 + "+")
+            
+            # 根据系统是否为Windows显示不同的绑定/解绑选项
+            if _IS_WINDOWS:
+                admin_options = [
+                    f"{AnsiColors.BOLD}{AnsiColors.RED}B.{AnsiColors.RESET} {AnsiColors.RED}绑定到root登录 (仅支持Linux系统){AnsiColors.RESET}",
+                    f"{AnsiColors.BOLD}{AnsiColors.RED}D.{AnsiColors.RESET} {AnsiColors.RED}取消root登录绑定 (仅支持Linux系统){AnsiColors.RESET}",
+                    f"{AnsiColors.BOLD}{AnsiColors.YELLOW}U.{AnsiColors.RESET} {AnsiColors.YELLOW}更新脚本{AnsiColors.RESET}"
+                ]
+            else:
+                admin_options = [
+                    f"{AnsiColors.BOLD}{AnsiColors.YELLOW}B.{AnsiColors.RESET} {AnsiColors.YELLOW}绑定到root登录{AnsiColors.RESET}",
+                    f"{AnsiColors.BOLD}{AnsiColors.YELLOW}D.{AnsiColors.RESET} {AnsiColors.YELLOW}取消root登录绑定{AnsiColors.RESET}",
+                    f"{AnsiColors.BOLD}{AnsiColors.YELLOW}U.{AnsiColors.RESET} {AnsiColors.YELLOW}更新脚本{AnsiColors.RESET}"
+                ]
+            
+            for option in admin_options:
+                # 去除颜色代码后计算实际长度
+                cleaned_option = option.replace(AnsiColors.BOLD, '').replace(AnsiColors.RESET, '')
+                cleaned_option = cleaned_option.replace(AnsiColors.YELLOW, '').replace(AnsiColors.RED, '')
+                padding = 70 - len(cleaned_option) - 1
+                padding = max(0, padding)
+                print(f"{AnsiColors.CYAN}| {option}{' ' * padding}{AnsiColors.CYAN}|")
+            
             display_footer(is_submenu=False)
             
             # Display "power by" message
             power_by_text = "power by 又菜又爱玩的小朱"
-            # chinese_chars_count = sum(1 for char_pb in power_by_text if '\u4e00' <= char_pb <= '\u9fff')
-            # english_chars_count = len(power_by_text) - chinese_chars_count
-            # credit_display_width = english_chars_count + (chinese_chars_count * 2)
-            # credit_padding = (terminal_width - credit_display_width) // 2
-            # credit_padding = max(0, credit_padding)
-            # print(f"\n{' ' * credit_padding}{AnsiColors.CYAN}{power_by_text}{AnsiColors.RESET}")
             print(f"\n{AnsiColors.CYAN}{power_by_text}{AnsiColors.RESET}") # 主菜单Power by靠左显示
             print() # Blank line before prompt
 
-            print(f"{AnsiColors.MAGENTA}{AnsiColors.BOLD}请按键选择分类 (数字), U 更新脚本, 或 ESC 退出： {AnsiColors.RESET}", end='', flush=True)
+            # 提示信息也根据系统类型显示不同内容
+            if _IS_WINDOWS:
+                prompt = f"{AnsiColors.MAGENTA}{AnsiColors.BOLD}请按键选择分类 (数字), U 更新脚本, 或 ESC 退出： {AnsiColors.RESET}"
+            else:
+                prompt = f"{AnsiColors.MAGENTA}{AnsiColors.BOLD}请按键选择分类 (数字), U 更新脚本, B 绑定root, D 解绑, 或 ESC 退出： {AnsiColors.RESET}"
+            
+            print(prompt, end='', flush=True)
             choice_char = get_single_char_from_terminal()
 
             if choice_char == '\x1b': # ESC
@@ -623,6 +811,34 @@ def main():
                 else:
                     print(f"\n{AnsiColors.RED}脚本库更新失败。请检查网络连接和Git是否正确安装及配置。{AnsiColors.RESET}")
                 input(f"{AnsiColors.CYAN}按 Enter 键返回主菜单...{AnsiColors.RESET}")
+                continue
+            
+            if choice_char.upper() == 'B':
+                if _IS_WINDOWS:
+                    print(f"\n{AnsiColors.RED}绑定功能仅支持Linux系统。{AnsiColors.RESET}")
+                    input(f"{AnsiColors.CYAN}按 Enter 键返回主菜单...{AnsiColors.RESET}")
+                    continue
+                
+                clear_screen()
+                display_fnscript_art()
+                display_header("飞牛脚本启动器 - 绑定到root登录")
+                print(f"{AnsiColors.CYAN}正在尝试绑定脚本到root登录...{AnsiColors.RESET}")
+                bind_to_root_login()
+                input(f"\n{AnsiColors.CYAN}按 Enter 键返回主菜单...{AnsiColors.RESET}")
+                continue
+            
+            if choice_char.upper() == 'D':
+                if _IS_WINDOWS:
+                    print(f"\n{AnsiColors.RED}解绑功能仅支持Linux系统。{AnsiColors.RESET}")
+                    input(f"{AnsiColors.CYAN}按 Enter 键返回主菜单...{AnsiColors.RESET}")
+                    continue
+                
+                clear_screen()
+                display_fnscript_art()
+                display_header("飞牛脚本启动器 - 取消root登录绑定")
+                print(f"{AnsiColors.CYAN}正在尝试取消脚本与root登录的绑定...{AnsiColors.RESET}")
+                unbind_from_root_login()
+                input(f"\n{AnsiColors.CYAN}按 Enter 键返回主菜单...{AnsiColors.RESET}")
                 continue
             
             try:
@@ -691,10 +907,23 @@ def main():
              except termios.error: pass 
 
 if __name__ == "__main__":
+    # 首先检查在Windows系统上尝试使用bind/unbind选项的情况
+    if _IS_WINDOWS and ("--bind" in sys.argv or "--unbind" in sys.argv):
+        if "--bind" in sys.argv:
+            print(f"{AnsiColors.RED}错误: 绑定功能仅支持Linux系统。{AnsiColors.RESET}")
+        elif "--unbind" in sys.argv:
+            print(f"{AnsiColors.RED}错误: 解绑功能仅支持Linux系统。{AnsiColors.RESET}")
+        sys.exit(1)
+    
     # 首先检查并安装 Textual
     if not check_and_install_textual():
         input(f"{AnsiColors.RED}Textual 依赖项处理失败，按 Enter 键退出...{AnsiColors.RESET}")
         sys.exit(1) # 如果安装失败，退出程序
+
+    # 如果是通过命令行参数直接处理绑定或解绑，则不需要初始化脚本库
+    if "--bind" in sys.argv or "--unbind" in sys.argv:
+        main()
+        sys.exit(0)
 
     print(f"{AnsiColors.CYAN}正在初始化并检查脚本库...{AnsiColors.RESET}")
     if not ensure_scripts_are_present(force_update=False): # Initial check/clone
