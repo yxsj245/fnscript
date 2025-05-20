@@ -24,6 +24,8 @@ git clone https://gitee.com/xiao-zhu245/fnscript.git
 cd fnscript/
 python3 menu.py
 ```
+### 建议使用 1panel面板终端或者CMD终端进行TUI操作，其它软件的终端可能存在兼容问题。使用脚本建议进入root用户下运行。
+
 ## 传统命令行运行
 若您担心pip库冲突风险或无法使用交互式终端情况下，我将部分功能单一的脚本增加了传统通过命令行形式运行的功能，在无需安装`textual`库就可以直接运行使用
 ### 如何使用
